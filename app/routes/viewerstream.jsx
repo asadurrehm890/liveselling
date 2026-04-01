@@ -13,6 +13,7 @@ export default function ViewerstreamPage() {
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [error, setError] = useState("");
+  const [socketError, setSocketError] = useState("");
 
   // Chat state
   const [messages, setMessages] = useState([]);
@@ -52,51 +53,132 @@ export default function ViewerstreamPage() {
       });
   }, [shop, idsParam]);
 
-  // Set up socket.io connection for chat
- useEffect(() => {
-  if (!streamId) return;
+  // Set up socket.io connection for chat - UPDATED FOR VERCEL
+  useEffect(() => {
+    if (!streamId) return;
 
-  // Connect specifically to our standalone server on 3001
-  const socket = io("http://localhost:3001", {
-    transports: ["websocket"] 
-  });
+    // Clear any previous socket errors
+    setSocketError("");
+    
+    // Get the current hostname (your Vercel app URL)
+    // This will work both locally and in production
+    const socketUrl = window.location.origin;
+    
+    console.log("🔌 Connecting to socket server at:", socketUrl);
+    console.log("📡 Stream ID:", streamId);
+    
+    // Create socket connection with proper configuration for Vercel
+    const socket = io(socketUrl, {
+      path: '/api/socket',  // Important: matches the API route path
+      transports: ['websocket', 'polling'],  // Fallback to polling if websocket fails
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      timeout: 10000,
+      forceNew: true  // Create a new connection each time
+    });
 
-  socketRef.current = socket;
-  socket.emit("joinStream", { streamId });
+    socketRef.current = socket;
 
-  socket.on("chatMessage", (message) => {
-    // Add messages from other users to your list
-    setMessages((prev) => [...prev, message]);
-  });
+    // Connection event handlers
+    socket.on('connect', () => {
+      console.log('✅ Connected to chat server with ID:', socket.id);
+      setSocketError("");
+      // Join the stream room after successful connection
+      socket.emit("joinStream", { streamId });
+    });
 
-  return () => socket.disconnect();
-}, [streamId]);
+    socket.on('connect_error', (error) => {
+      console.error('❌ Socket connection error:', error);
+      setSocketError("Chat server connection failed. Messages may not work. Please refresh the page.");
+    });
 
+    socket.on('disconnect', (reason) => {
+      console.log('🔌 Disconnected from chat server:', reason);
+      if (reason === 'io server disconnect') {
+        // Reconnect if server disconnected
+        socket.connect();
+      }
+    });
 
-  
+    socket.on('reconnect', (attemptNumber) => {
+      console.log('🔄 Reconnected to chat server after', attemptNumber, 'attempts');
+      setSocketError("");
+      // Rejoin the stream after reconnection
+      if (streamId) {
+        socket.emit("joinStream", { streamId });
+      }
+    });
+
+    socket.on('reconnect_error', (error) => {
+      console.error('❌ Reconnection error:', error);
+      setSocketError("Chat server reconnection failed. Please refresh the page.");
+    });
+
+    // Listen for incoming chat messages
+    socket.on("chatMessage", (message) => {
+      console.log('📨 Received message:', message);
+      setMessages((prev) => [...prev, message]);
+    });
+
+    // Cleanup on unmount
+    return () => {
+      if (socket) {
+        socket.disconnect();
+        socketRef.current = null;
+      }
+    };
+  }, [streamId]);
 
   const handleChatSubmit = (e) => {
-  e.preventDefault();
-  if (!chatInput.trim() || !socketRef.current || !streamId) return;
+    e.preventDefault();
+    
+    // Validation checks
+    if (!chatInput.trim()) {
+      return;
+    }
+    
+    if (!socketRef.current) {
+      console.error("No socket connection available");
+      setSocketError("Chat connection not available. Please refresh the page.");
+      return;
+    }
+    
+    if (!socketRef.current.connected) {
+      console.error("Socket not connected");
+      setSocketError("Chat disconnected. Please wait for reconnection or refresh.");
+      return;
+    }
+    
+    if (!streamId) {
+      console.error("No stream ID available");
+      return;
+    }
 
-  const text = chatInput.trim();
-  
-  const myMsg = {
-    id: Date.now() + Math.random(),
-    author: "Viewer", 
-    text: text,
-    ts: new Date().toISOString(),
-    streamId: streamId // CRITICAL: This must match the room ID
+    const text = chatInput.trim();
+    
+    const myMsg = {
+      id: Date.now() + Math.random(),
+      author: "Viewer", 
+      text: text,
+      ts: new Date().toISOString(),
+      streamId: streamId // CRITICAL: This must match the room ID
+    };
+
+    // Add to your own screen immediately
+    setMessages((prev) => [...prev, myMsg]);
+
+    // Send to server
+    try {
+      socketRef.current.emit("chatMessage", myMsg);
+      console.log('📤 Message sent:', myMsg);
+    } catch (err) {
+      console.error('Error sending message:', err);
+      setSocketError("Failed to send message. Please try again.");
+    }
+    
+    setChatInput("");
   };
-
-  // Add to your own screen
-  setMessages((prev) => [...prev, myMsg]);
-
-  // Send to server
-  socketRef.current.emit("chatMessage", myMsg);
-  
-  setChatInput("");
-};
 
   return (
     <div
@@ -148,6 +230,12 @@ export default function ViewerstreamPage() {
       {error && (
         <p style={{ color: "red", marginBottom: "1rem" }}>
           {error}
+        </p>
+      )}
+
+      {socketError && (
+        <p style={{ color: "orange", marginBottom: "1rem", backgroundColor: "#fff3e0", padding: "0.5rem", borderRadius: "4px" }}>
+          ⚠️ {socketError}
         </p>
       )}
 
@@ -314,7 +402,19 @@ export default function ViewerstreamPage() {
 
       {/* Chat section */}
       <section>
-        <h2 style={{ marginBottom: "0.75rem" }}>Live Chat</h2>
+        <h2 style={{ marginBottom: "0.75rem" }}>
+          Live Chat
+          {socketRef.current?.connected && (
+            <span style={{ fontSize: "0.8rem", marginLeft: "0.5rem", color: "green" }}>
+              ● Connected
+            </span>
+          )}
+          {socketRef.current && !socketRef.current.connected && (
+            <span style={{ fontSize: "0.8rem", marginLeft: "0.5rem", color: "orange" }}>
+              ● Connecting...
+            </span>
+          )}
+        </h2>
 
         <div
           style={{
@@ -328,7 +428,7 @@ export default function ViewerstreamPage() {
           }}
         >
           {messages.length === 0 ? (
-            <p style={{ color: "#777", margin: 0 }}>No messages yet.</p>
+            <p style={{ color: "#777", margin: 0 }}>No messages yet. Be the first to chat!</p>
           ) : (
             <ul
               style={{
@@ -343,12 +443,15 @@ export default function ViewerstreamPage() {
                   style={{
                     marginBottom: "0.5rem",
                     fontSize: "0.9rem",
+                    padding: "0.25rem",
+                    borderBottom: "1px solid #eee",
                   }}
                 >
                   <span
                     style={{
                       fontWeight: 600,
                       marginRight: "0.25rem",
+                      color: "#008060",
                     }}
                   >
                     {msg.author || "Viewer"}:
@@ -357,7 +460,7 @@ export default function ViewerstreamPage() {
                   <span
                     style={{
                       marginLeft: "0.5rem",
-                      fontSize: "0.75rem",
+                      fontSize: "0.7rem",
                       color: "#999",
                     }}
                   >
@@ -374,29 +477,35 @@ export default function ViewerstreamPage() {
         <form onSubmit={handleChatSubmit} style={{ display: "flex", gap: "0.5rem" }}>
           <input
             type="text"
-            placeholder="Type your message..."
+            placeholder={socketRef.current?.connected ? "Type your message..." : "Connecting to chat..."}
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
+            disabled={!socketRef.current?.connected}
             style={{
               flex: 1,
               padding: "0.5rem 0.75rem",
               borderRadius: "4px",
               border: "1px solid #ccc",
               fontSize: "0.95rem",
+              backgroundColor: !socketRef.current?.connected ? "#f5f5f5" : "white",
             }}
           />
           <button
             type="submit"
-            disabled={!streamId || !chatInput.trim()}
+            disabled={!streamId || !chatInput.trim() || !socketRef.current?.connected}
             style={{
               padding: "0.5rem 1rem",
               fontSize: "0.95rem",
               fontWeight: 600,
               borderRadius: "4px",
               border: "none",
-              backgroundColor: !streamId || !chatInput.trim() ? "#ccc" : "#008060",
+              backgroundColor: !streamId || !chatInput.trim() || !socketRef.current?.connected 
+                ? "#ccc" 
+                : "#008060",
               color: "#fff",
-              cursor: !streamId || !chatInput.trim() ? "not-allowed" : "pointer",
+              cursor: !streamId || !chatInput.trim() || !socketRef.current?.connected 
+                ? "not-allowed" 
+                : "pointer",
             }}
           >
             Send
