@@ -2,12 +2,11 @@
 
 client_id = "7c8da6841e1b276f107dabc0c98df265"
 name = "livestream"
-application_url = "https://example.com"
+application_url = "https://liveselling-eta.vercel.app/"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
-include_config_on_deploy = true
 
 [webhooks]
 api_version = "2026-04"
@@ -25,4 +24,4 @@ api_version = "2026-04"
 scopes = "write_products"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://liveselling-eta.vercel.app/api/auth" ]
