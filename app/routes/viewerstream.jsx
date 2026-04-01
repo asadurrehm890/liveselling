@@ -70,7 +70,7 @@ export default function ViewerstreamPage() {
     // Create socket connection with proper configuration for Vercel
     const socket = io(socketUrl, {
       path: '/api/socket',  // Important: matches the API route path
-      transports: ['websocket', 'polling'],  // Fallback to polling if websocket fails
+      transports: [ 'polling'],  // Fallback to polling if websocket fails
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
