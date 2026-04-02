@@ -1,24 +1,32 @@
-<!-- sections/live-stream.liquid -->
-<div class="live-stream-section">
-  <div class="page-width">
+<!-- extensions/liveblocks/blocks/live_stream.liquid -->
+
+<div class="live-stream-block" data-block-id="{{ block.id }}">
+  <div class="live-stream-container">
     
-    {% if section.settings.title != blank %}
-      <h2 class="live-stream-title">{{ section.settings.title }}</h2>
+    <!-- Title -->
+    {% if block.settings.title != blank %}
+      <h2 class="live-stream-title">{{ block.settings.title }}</h2>
     {% endif %}
     
-    {% if section.settings.description != blank %}
+    <!-- Description -->
+    {% if block.settings.description != blank %}
       <div class="live-stream-description">
-        {{ section.settings.description }}
+        {{ block.settings.description }}
       </div>
     {% endif %}
     
+    <!-- Iframe for Vercel app -->
     <div class="live-stream-iframe-wrapper">
+      {% assign base_url = block.settings.vercel_app_url | default: 'https://liveselling-eta.vercel.app' %}
+      {% assign shop_param = shop.permanent_domain | url_encode %}
+      {% assign full_url = base_url | append: '/sellerstream?shop=' | append: shop_param %}
+      
       <iframe
-        id="live-stream-iframe"
+        id="sellerstream-iframe-{{ block.id }}"
         class="live-stream-iframe"
-        src=""
+        src="{{ full_url }}"
         width="100%"
-        height="{{ section.settings.iframe_height }}"
+        height="{{ block.settings.iframe_height }}"
         frameborder="0"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
         allowfullscreen
@@ -26,62 +34,95 @@
       ></iframe>
     </div>
     
+    <!-- Fallback message -->
+    <div id="iframe-fallback-{{ block.id }}" style="display: none;" class="live-stream-fallback">
+      <p>Unable to load live stream. Please refresh the page or try again later.</p>
+    </div>
+    
   </div>
 </div>
 
 <style>
-  .live-stream-section {
-    margin: 50px 0;
+  .live-stream-block {
+    margin: 20px 0;
+    padding: 0;
+  }
+  
+  .live-stream-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
   }
   
   .live-stream-title {
+    font-size: 28px;
+    font-weight: bold;
+    margin-bottom: 15px;
     text-align: center;
-    margin-bottom: 20px;
   }
   
   .live-stream-description {
+    font-size: 16px;
+    line-height: 1.6;
+    margin-bottom: 25px;
     text-align: center;
-    margin-bottom: 30px;
     color: #666;
-    max-width: 800px;
-    margin-left: auto;
-    margin-right: auto;
   }
   
   .live-stream-iframe-wrapper {
     position: relative;
-    padding-bottom: 56.25%; /* 16:9 aspect ratio */
-    height: 0;
+    width: 100%;
     overflow: hidden;
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   }
   
   .live-stream-iframe {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    display: block;
     border: none;
+    background-color: #f5f5f5;
+  }
+  
+  .live-stream-fallback {
+    padding: 40px;
+    text-align: center;
+    background-color: #f8f8f8;
+    border-radius: 8px;
+    color: #666;
   }
   
   @media (max-width: 768px) {
-    .live-stream-section {
-      margin: 30px 0;
+    .live-stream-container {
+      padding: 10px;
+    }
+    
+    .live-stream-title {
+      font-size: 24px;
+    }
+    
+    .live-stream-description {
+      font-size: 14px;
     }
   }
 </style>
 
 <script>
   (function() {
-    const shopDomain = "{{ shop.permanent_domain }}";
-    const vercelAppUrl = "{{ section.settings.vercel_app_url | default: 'https://liveselling-eta.vercel.app' }}";
-    const iframeUrl = `${vercelAppUrl}/sellerstream?shop=${encodeURIComponent(shopDomain)}`;
+    var iframe = document.getElementById('sellerstream-iframe-{{ block.id }}');
+    var fallback = document.getElementById('iframe-fallback-{{ block.id }}');
     
-    const iframe = document.getElementById('live-stream-iframe');
     if (iframe) {
-      iframe.src = iframeUrl;
+      console.log('Iframe src:', iframe.src);
+      
+      iframe.onerror = function() {
+        console.error('Failed to load iframe');
+        iframe.style.display = 'none';
+        if (fallback) fallback.style.display = 'block';
+      };
+      
+      iframe.onload = function() {
+        console.log('Iframe loaded successfully');
+      };
     }
   })();
 </script>
@@ -89,6 +130,7 @@
 {% schema %}
 {
   "name": "Live Stream",
+  "target": "section",
   "settings": [
     {
       "type": "text",
@@ -100,28 +142,39 @@
       "type": "textarea",
       "id": "description",
       "label": "Description",
-      "default": "Join our live stream to see products in action!"
+      "default": "Join our live stream to see products in action and chat with our team!"
     },
     {
       "type": "select",
       "id": "iframe_height",
-      "label": "Aspect Ratio",
+      "label": "Iframe Height",
       "options": [
         {
-          "value": "56.25%",
-          "label": "16:9 (Standard)"
+          "value": "400px",
+          "label": "400px"
         },
         {
-          "value": "75%",
-          "label": "4:3"
+          "value": "500px",
+          "label": "500px"
         },
         {
-          "value": "42.85%",
-          "label": "21:9 (Cinematic)"
+          "value": "600px",
+          "label": "600px"
+        },
+        {
+          "value": "700px",
+          "label": "700px"
+        },
+        {
+          "value": "80vh",
+          "label": "80% Viewport Height"
+        },
+        {
+          "value": "90vh",
+          "label": "90% Viewport Height"
         }
       ],
-      "default": "56.25%",
-      "info": "Sets the iframe aspect ratio"
+      "default": "600px"
     },
     {
       "type": "text",
@@ -129,12 +182,6 @@
       "label": "Vercel App URL",
       "default": "https://liveselling-eta.vercel.app",
       "info": "Your deployed Vercel app URL"
-    }
-  ],
-  "presets": [
-    {
-      "name": "Live Stream",
-      "category": "Video"
     }
   ]
 }
