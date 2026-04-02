@@ -414,53 +414,130 @@ export default function ViewerstreamPage() {
                     </p>
 
                     {/* Variant Options */}
-                    {product.options && product.options.length > 0 && (
-                      <div className="live-stream-variant-options">
-                        {product.options.map((option) => {
-                          const currentVariant = selectedVariants[product.id];
-                          const currentValue = currentVariant?.selectedOptions?.find(
-                            opt => opt.name === option.name
-                          )?.value || option.values[0];
-                          
-                          return (
-                            <div key={option.id} className="live-stream-variant-option">
-                              <label className="live-stream-variant-label">{option.name}:</label>
-                              <select
-                                className="live-stream-variant-select"
-                                value={currentValue}
-                                onChange={(e) => {
-                                  const newVariant = product.variants?.find(v =>
-                                    v.selectedOptions?.some(
-                                      opt => opt.name === option.name && opt.value === e.target.value
-                                    )
-                                  );
-                                  if (newVariant) {
-                                    handleVariantChange(product.id, newVariant.id);
-                                  }
-                                }}
-                              >
-                                {option.values.map((value) => {
-                                  const variantForValue = product.variants?.find(v =>
-                                    v.selectedOptions?.some(
-                                      opt => opt.name === option.name && opt.value === value
-                                    )
-                                  );
-                                  return (
-                                    <option 
-                                      key={value} 
-                                      value={value}
-                                      disabled={!variantForValue?.availableForSale}
-                                    >
-                                      {value} {!variantForValue?.availableForSale ? '(Sold Out)' : ''}
-                                    </option>
-                                  );
-                                })}
-                              </select>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                    {/* Variant Options */}
+{product.options && product.options.length > 0 && (
+  <div className="live-stream-variant-options">
+    {product.options.map((option) => {
+      const currentVariant = selectedVariants[product.id];
+      const currentValue =
+        currentVariant?.selectedOptions?.find(
+          (opt) => opt.name === option.name
+        )?.value || option.values[0];
+
+      return (
+        <div key={option.id} className="live-stream-variant-option">
+          <label className="live-stream-variant-label">
+            {option.name}:
+          </label>
+          <select
+            className="live-stream-variant-select"
+            value={currentValue}
+            onChange={(e) => {
+              const newValue = e.target.value;
+
+              const currentVariant = selectedVariants[product.id];
+
+              // Build the desired combination of all options:
+              // - use the new value for this option
+              // - keep current values for the other options (if any)
+              const desiredOptions = product.options.map((optDef) => {
+                if (optDef.name === option.name) {
+                  // This is the option we just changed
+                  return {
+                    name: optDef.name,
+                    value: newValue,
+                  };
+                }
+
+                // For other options, keep the current selection if available
+                const currentOptValue =
+                  currentVariant?.selectedOptions?.find(
+                    (o) => o.name === optDef.name
+                  )?.value || optDef.values[0];
+
+                return {
+                  name: optDef.name,
+                  value: currentOptValue,
+                };
+              });
+
+              // Find the variant that matches ALL desiredOptions
+              const newVariant = product.variants?.find((v) => {
+                if (!v.selectedOptions) return false;
+                return desiredOptions.every((desiredOpt) =>
+                  v.selectedOptions.some(
+                    (opt) =>
+                      opt.name === desiredOpt.name &&
+                      opt.value === desiredOpt.value
+                  )
+                );
+              });
+
+              if (newVariant) {
+                handleVariantChange(product.id, newVariant.id);
+              } else {
+                // Optional: handle missing variant combination
+                console.warn(
+                  "No variant found for option combination:",
+                  desiredOptions
+                );
+              }
+            }}
+          >
+            {option.values.map((value) => {
+              // For disabling "Sold Out" options, we need to know if there
+              // exists ANY variant with this value AND the other current selections
+              const currentVariant = selectedVariants[product.id];
+
+              const desiredOptionsForThisValue = product.options.map(
+                (optDef) => {
+                  if (optDef.name === option.name) {
+                    return {
+                      name: optDef.name,
+                      value: value,
+                    };
+                  }
+
+                  const currentOptValue =
+                    currentVariant?.selectedOptions?.find(
+                      (o) => o.name === optDef.name
+                    )?.value || optDef.values[0];
+
+                  return {
+                    name: optDef.name,
+                    value: currentOptValue,
+                  };
+                }
+              );
+
+              const variantForValue = product.variants?.find((v) => {
+                if (!v.selectedOptions) return false;
+                return desiredOptionsForThisValue.every((desiredOpt) =>
+                  v.selectedOptions.some(
+                    (opt) =>
+                      opt.name === desiredOpt.name &&
+                      opt.value === desiredOpt.value
+                  )
+                );
+              });
+
+              return (
+                <option
+                  key={value}
+                  value={value}
+                  disabled={!variantForValue?.availableForSale}
+                >
+                  {value}{" "}
+                  {!variantForValue?.availableForSale ? "(Sold Out)" : ""}
+                </option>
+              );
+            })}
+          </select>
+        </div>
+      );
+    })}
+  </div>
+)}
 
                     {/* Price */}
                     <p className="live-stream-product-price">
