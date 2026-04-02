@@ -2,12 +2,9 @@
 import Pusher from 'pusher';
 
 export async function action({ request }) {
-  // Log incoming request for debugging
   console.log('📨 Chat API called');
   
-  // Only accept POST requests
   if (request.method !== 'POST') {
-    console.log('❌ Method not allowed:', request.method);
     return new Response(
       JSON.stringify({ error: 'Method not allowed. Use POST.' }), 
       {
@@ -18,17 +15,14 @@ export async function action({ request }) {
   }
 
   try {
-    // Get message data from request
     const body = await request.json();
     console.log('📝 Received message data:', body);
 
     const { streamId, text, author, timestamp } = body;
 
-    // Validate required fields
     if (!streamId || !text) {
-      console.log('❌ Missing required fields:', { streamId, text });
       return new Response(
-        JSON.stringify({ error: 'Missing required fields: streamId and text are required' }), 
+        JSON.stringify({ error: 'Missing required fields' }), 
         {
           status: 400,
           headers: { 'Content-Type': 'application/json' }
@@ -36,25 +30,33 @@ export async function action({ request }) {
       );
     }
 
-    // Check if Pusher credentials are available
+    // Log all Pusher credentials (first few chars only for security)
     const pusherAppId = process.env.PUSHER_APP_ID;
     const pusherKey = process.env.PUSHER_KEY;
     const pusherSecret = process.env.PUSHER_SECRET;
     const pusherCluster = process.env.PUSHER_CLUSTER;
 
-    console.log('🔑 Pusher credentials check:', {
-      hasAppId: !!pusherAppId,
-      hasKey: !!pusherKey,
-      hasSecret: !!pusherSecret,
-      hasCluster: !!pusherCluster,
-      appIdPrefix: pusherAppId ? pusherAppId.substring(0, 5) : 'none',
-      keyPrefix: pusherKey ? pusherKey.substring(0, 8) : 'none'
+    console.log('🔑 Pusher credentials (from env):', {
+      appId: pusherAppId ? `${pusherAppId.substring(0, 4)}...` : 'MISSING',
+      key: pusherKey ? `${pusherKey.substring(0, 8)}...` : 'MISSING',
+      secret: pusherSecret ? `${pusherSecret.substring(0, 4)}...` : 'MISSING',
+      cluster: pusherCluster || 'MISSING'
     });
 
+    // Validate all credentials are present
     if (!pusherAppId || !pusherKey || !pusherSecret || !pusherCluster) {
-      console.error('❌ Missing Pusher credentials in environment variables');
+      const missing = [];
+      if (!pusherAppId) missing.push('PUSHER_APP_ID');
+      if (!pusherKey) missing.push('PUSHER_KEY');
+      if (!pusherSecret) missing.push('PUSHER_SECRET');
+      if (!pusherCluster) missing.push('PUSHER_CLUSTER');
+      
+      console.error('❌ Missing Pusher credentials:', missing);
       return new Response(
-        JSON.stringify({ error: 'Server configuration error: Pusher credentials missing' }), 
+        JSON.stringify({ 
+          error: 'Server configuration error', 
+          details: `Missing credentials: ${missing.join(', ')}` 
+        }), 
         {
           status: 500,
           headers: { 'Content-Type': 'application/json' }
@@ -62,7 +64,7 @@ export async function action({ request }) {
       );
     }
 
-    // Initialize Pusher with your credentials
+    // Initialize Pusher with credentials
     const pusher = new Pusher({
       appId: pusherAppId,
       key: pusherKey,
@@ -71,7 +73,6 @@ export async function action({ request }) {
       useTLS: true
     });
 
-    // Create message object
     const message = {
       id: Date.now() + Math.random(),
       text: text,
@@ -80,30 +81,52 @@ export async function action({ request }) {
       streamId: streamId
     };
 
-    console.log(`📤 Sending message to channel: stream-${streamId}`, message);
+    console.log(`📤 Attempting to send to channel: stream-${streamId}`);
 
-    // Trigger event to Pusher channel
-    const triggerResponse = await pusher.trigger(`stream-${streamId}`, 'new-message', message);
-    
-    console.log('✅ Pusher trigger response:', triggerResponse);
-
-    // Return success response
-    return new Response(
-      JSON.stringify({ success: true, message }), 
-      {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
+    // Trigger with error catching
+    try {
+      const triggerResponse = await pusher.trigger(`stream-${streamId}`, 'new-message', message);
+      console.log('✅ Pusher trigger response:', triggerResponse);
+      
+      return new Response(
+        JSON.stringify({ success: true, message }), 
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+    } catch (pusherError) {
+      console.error('❌ Pusher trigger error:', pusherError);
+      
+      // Check if it's a 401 error
+      if (pusherError.statusCode === 401 || pusherError.message?.includes('401')) {
+        return new Response(
+          JSON.stringify({ 
+            error: 'Pusher authentication failed', 
+            details: 'Invalid app credentials. Please check your Pusher App ID, Key, and Secret in environment variables.' 
+          }), 
+          {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' }
+          }
+        );
       }
-    );
+      
+      throw pusherError;
+    }
 
   } catch (error) {
-    console.error('❌ Pusher error:', error);
-    console.error('Error details:', error.message, error.stack);
+    console.error('❌ API error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      statusCode: error.statusCode
+    });
     
     return new Response(
       JSON.stringify({ 
         error: 'Failed to send message', 
-        details: error.message 
+        details: error.message || 'Unknown error'
       }), 
       {
         status: 500,
@@ -113,10 +136,18 @@ export async function action({ request }) {
   }
 }
 
-// Optional: Handle GET requests for debugging
 export async function loader() {
   return new Response(
-    JSON.stringify({ message: 'Chat API is running. Use POST to send messages.' }), 
+    JSON.stringify({ 
+      message: 'Chat API is running. Use POST to send messages.',
+      environment: process.env.NODE_ENV,
+      hasPusherConfig: {
+        appId: !!process.env.PUSHER_APP_ID,
+        key: !!process.env.PUSHER_KEY,
+        secret: !!process.env.PUSHER_SECRET,
+        cluster: !!process.env.PUSHER_CLUSTER
+      }
+    }), 
     {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
