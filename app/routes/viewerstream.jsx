@@ -1,7 +1,7 @@
 // app/routes/viewerstream.jsx
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
-import Pusher from 'pusher-js';
+import Pusher from "pusher-js";
 
 export default function ViewerstreamPage() {
   const [searchParams] = useSearchParams();
@@ -21,20 +21,91 @@ export default function ViewerstreamPage() {
   const [isConnected, setIsConnected] = useState(false);
   const pusherRef = useRef(null);
   const channelRef = useRef(null);
-  
+
   // Create a unique client ID for this browser session
   const [clientId, setClientId] = useState(null);
+
+  // Variant selection state: productId -> variantId
+  const [selectedVariants, setSelectedVariants] = useState({});
 
   // Generate client ID only on the client side
   useEffect(() => {
     // This code only runs in the browser, not during SSR
-    let id = localStorage.getItem('chat_client_id');
+    let id = localStorage.getItem("chat_client_id");
     if (!id) {
-      id = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      localStorage.setItem('chat_client_id', id);
+      id = `client_${Date.now()}_${Math.random()
+        .toString(36)
+        .substr(2, 9)}`;
+      localStorage.setItem("chat_client_id", id);
     }
     setClientId(id);
   }, []);
+
+  // Helper: get default variant (first available or first)
+  const getDefaultVariantId = (product) => {
+    const nodes = product.variants?.nodes || [];
+    if (!nodes.length) return null;
+
+    const available = nodes.find((v) => v.availableForSale);
+    return (available || nodes[0]).id;
+  };
+
+  const handleVariantChange = (productId, variantId) => {
+    setSelectedVariants((prev) => ({
+      ...prev,
+      [productId]: variantId,
+    }));
+  };
+
+  const handleAddToCartAndCheckout = async (product, quantity = 1) => {
+    try {
+      const variantId =
+        selectedVariants[product.id] || getDefaultVariantId(product);
+
+      if (!variantId) {
+        alert("No available variant for this product.");
+        return;
+      }
+
+      if (!shop) {
+        alert("Missing shop parameter in URL.");
+        return;
+      }
+
+      const res = await fetch("/api/add-to-cart", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          shop,
+          merchandiseId: variantId,
+          quantity,
+          // Optionally pass countryCode if you want to localize pricing
+          // countryCode: "US",
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error("Add-to-cart failed:", err);
+        alert(err.error || "Failed to create cart");
+        return;
+      }
+
+      const data = await res.json();
+
+      if (data.checkoutUrl) {
+        // Redirect viewer straight to Shopify checkout
+        window.location.href = data.checkoutUrl;
+      } else {
+        alert("No checkout URL returned from server.");
+      }
+    } catch (error) {
+      console.error("Error adding to cart:", error);
+      alert("Unexpected error adding to cart.");
+    }
+  };
 
   // Load products for this stream
   useEffect(() => {
@@ -58,7 +129,18 @@ export default function ViewerstreamPage() {
         return res.json();
       })
       .then((data) => {
-        setProducts(data.products || []);
+        const loadedProducts = data.products || [];
+        setProducts(loadedProducts);
+
+        // Initialize default variant selection for each product
+        const initialSelection = {};
+        for (const p of loadedProducts) {
+          const defaultId = getDefaultVariantId(p);
+          if (defaultId) {
+            initialSelection[p.id] = defaultId;
+          }
+        }
+        setSelectedVariants(initialSelection);
       })
       .catch((err) => {
         console.error("Error fetching products:", err);
@@ -67,6 +149,7 @@ export default function ViewerstreamPage() {
       .finally(() => {
         setLoadingProducts(false);
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shop, idsParam]);
 
   // Set up Pusher connection for chat
@@ -79,56 +162,60 @@ export default function ViewerstreamPage() {
     const pusherCluster = window.ENV?.PUSHER_CLUSTER;
 
     // Debug: Log what we have
-    console.log('Pusher config from window.ENV:', {
+    console.log("Pusher config from window.ENV:", {
       hasKey: !!pusherKey,
-      keyPrefix: pusherKey ? pusherKey.substring(0, 8) : 'none',
+      keyPrefix: pusherKey ? pusherKey.substring(0, 8) : "none",
       cluster: pusherCluster,
       streamId: streamId,
-      clientId: clientId
+      clientId: clientId,
     });
 
     // Check if credentials are available
     if (!pusherKey || !pusherCluster) {
-      console.error('Pusher credentials not found. Make sure environment variables are set.');
+      console.error(
+        "Pusher credentials not found. Make sure environment variables are set.",
+      );
       setChatError("Chat configuration error. Please contact support.");
       return;
     }
 
     // Validate that we're not using placeholder values
-    if (pusherKey === 'YOUR_PUSHER_KEY' || pusherKey.includes('YOUR_')) {
-      console.error('Invalid Pusher key. Please set correct credentials in Vercel environment variables.');
+    if (pusherKey === "YOUR_PUSHER_KEY" || pusherKey.includes("YOUR_")) {
+      console.error(
+        "Invalid Pusher key. Please set correct credentials in Vercel environment variables.",
+      );
       setChatError("Chat configuration error. Invalid API key.");
       return;
     }
 
     setChatError("");
-    
+
     try {
-      console.log('Initializing Pusher with cluster:', pusherCluster);
-      
+      console.log("Initializing Pusher with cluster:", pusherCluster);
+
       // Initialize Pusher
       const pusher = new Pusher(pusherKey, {
         cluster: pusherCluster,
         forceTLS: true,
-        enabledTransports: ['ws', 'wss'],
+        enabledTransports: ["ws", "wss"],
       });
 
       pusherRef.current = pusher;
 
       // Connection event handlers
-      pusher.connection.bind('connected', () => {
-        console.log('✅ Connected to Pusher');
+      pusher.connection.bind("connected", () => {
+        console.log("✅ Connected to Pusher");
         setIsConnected(true);
         setChatError("");
       });
 
-      pusher.connection.bind('disconnected', () => {
-        console.log('🔌 Disconnected from Pusher');
+      pusher.connection.bind("disconnected", () => {
+        console.log("🔌 Disconnected from Pusher");
         setIsConnected(false);
       });
 
-      pusher.connection.bind('error', (error) => {
-        console.error('❌ Pusher connection error:', error);
+      pusher.connection.bind("error", (error) => {
+        console.error("❌ Pusher connection error:", error);
         setChatError("Chat connection failed. Please refresh the page.");
         setIsConnected(false);
       });
@@ -139,32 +226,36 @@ export default function ViewerstreamPage() {
       channelRef.current = channel;
 
       // Bind to the 'new-message' event - FILTER OUT OWN MESSAGES
-      channel.bind('new-message', (message) => {
-        console.log('📨 Received message from Pusher:', message);
-        
+      channel.bind("new-message", (message) => {
+        console.log("📨 Received message from Pusher:", message);
+
         // Don't add the message if it came from this client
         if (message.clientId === clientId) {
-          console.log('🔇 Ignoring own message from Pusher (already displayed)');
+          console.log(
+            "🔇 Ignoring own message from Pusher (already displayed)",
+          );
           return;
         }
-        
-        console.log('✅ Adding message from another client:', message.text);
+
+        console.log(
+          "✅ Adding message from another client:",
+          message.text,
+        );
         setMessages((prev) => [...prev, message]);
       });
 
       // Handle subscription success
-      channel.bind('pusher:subscription_succeeded', () => {
+      channel.bind("pusher:subscription_succeeded", () => {
         console.log(`✅ Subscribed to channel: ${channelName}`);
       });
 
       // Handle subscription error
-      channel.bind('pusher:subscription_error', (error) => {
+      channel.bind("pusher:subscription_error", (error) => {
         console.error(`❌ Subscription error:`, error);
         setChatError("Failed to join chat room. Please refresh the page.");
       });
-
     } catch (error) {
-      console.error('Pusher initialization error:', error);
+      console.error("Pusher initialization error:", error);
       setChatError("Failed to initialize chat. Please check your configuration.");
     }
 
@@ -182,16 +273,18 @@ export default function ViewerstreamPage() {
 
   const handleChatSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!chatInput.trim()) {
       return;
     }
-    
+
     if (!isConnected) {
-      setChatError("Chat not connected. Please wait for connection or refresh the page.");
+      setChatError(
+        "Chat not connected. Please wait for connection or refresh the page.",
+      );
       return;
     }
-    
+
     if (!streamId) {
       console.error("No stream ID available");
       return;
@@ -204,16 +297,16 @@ export default function ViewerstreamPage() {
     }
 
     const text = chatInput.trim();
-    
+
     // Create message with client ID to identify it came from this user
     const tempMessage = {
       id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      author: "Viewer", 
+      author: "Viewer",
       text: text,
       timestamp: new Date().toISOString(),
       streamId: streamId,
       clientId: clientId,
-      isPending: true
+      isPending: true,
     };
 
     // Add to UI immediately (optimistic update)
@@ -221,51 +314,48 @@ export default function ViewerstreamPage() {
     setChatInput("");
 
     try {
-      console.log('📤 Sending message to API:', {
+      console.log("📤 Sending message to API:", {
         streamId: streamId,
         text: text,
         author: "Viewer",
-        clientId: clientId
+        clientId: clientId,
       });
 
-      const response = await fetch('/api/chat', {
-        method: 'POST',
+      const response = await fetch("/api/chat", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           streamId: streamId,
           text: text,
           author: "Viewer",
           timestamp: new Date().toISOString(),
-          clientId: clientId
-        })
+          clientId: clientId,
+        }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to send message');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to send message");
       }
 
       const data = await response.json();
-      console.log('📤 Message sent successfully:', data);
-      
+      console.log("📤 Message sent successfully:", data);
+
       // Update the pending message to confirmed
-      setMessages((prev) => 
-        prev.map(msg => 
-          msg.id === tempMessage.id 
-            ? { ...msg, isPending: false }
-            : msg
-        )
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === tempMessage.id ? { ...msg, isPending: false } : msg,
+        ),
       );
-      
     } catch (err) {
-      console.error('Error sending message:', err);
+      console.error("Error sending message:", err);
       setChatError(`Failed to send message: ${err.message}`);
-      
+
       // Remove the failed message
-      setMessages((prev) => 
-        prev.filter(msg => msg.id !== tempMessage.id)
+      setMessages((prev) =>
+        prev.filter((msg) => msg.id !== tempMessage.id),
       );
     }
   };
@@ -311,9 +401,15 @@ export default function ViewerstreamPage() {
       </div>
 
       {error && <div className="live-stream-error">{error}</div>}
-      {chatError && <div className="live-stream-warning">⚠️ {chatError}</div>}
+      {chatError && (
+        <div className="live-stream-warning">⚠️ {chatError}</div>
+      )}
 
-      {loadingProducts && <div className="live-stream-loading">Loading products for this stream…</div>}
+      {loadingProducts && (
+        <div className="live-stream-loading">
+          Loading products for this stream…
+        </div>
+      )}
 
       {!loadingProducts && !error && products.length === 0 && (
         <div className="live-stream-info">
@@ -323,7 +419,9 @@ export default function ViewerstreamPage() {
 
       {!loadingProducts && products.length > 0 && (
         <section style={{ marginBottom: "2rem" }}>
-          <h2 className="live-stream-section-title">Products in this stream</h2>
+          <h2 className="live-stream-section-title">
+            Products in this stream
+          </h2>
           <div className="live-stream-products-grid">
             {products.map((product) => {
               const image = product.featuredImage;
@@ -333,7 +431,9 @@ export default function ViewerstreamPage() {
               const maxPrice = priceRange?.maxVariantPrice;
 
               const formatPrice = (p) =>
-                p ? `${p.amount} ${p.currencyCode ?? ""}`.trim() : "N/A";
+                p
+                  ? `${p.amount} ${p.currencyCode ?? ""}`.trim()
+                  : "N/A";
 
               let priceDisplay = "N/A";
               if (minPrice && maxPrice) {
@@ -343,7 +443,9 @@ export default function ViewerstreamPage() {
                 ) {
                   priceDisplay = formatPrice(minPrice);
                 } else {
-                  priceDisplay = `${formatPrice(minPrice)} – ${formatPrice(maxPrice)}`;
+                  priceDisplay = `${formatPrice(
+                    minPrice,
+                  )} – ${formatPrice(maxPrice)}`;
                 }
               }
 
@@ -351,8 +453,15 @@ export default function ViewerstreamPage() {
                 ? `https://${shop}/products/${product.handle}`
                 : null;
 
+              const variants = product.variants?.nodes || [];
+              const selectedVariantId =
+                selectedVariants[product.id] || getDefaultVariantId(product);
+
               return (
-                <article key={product.id} className="live-stream-product-card">
+                <article
+                  key={product.id}
+                  className="live-stream-product-card"
+                >
                   {image ? (
                     <a
                       href={productUrl || "#"}
@@ -398,12 +507,77 @@ export default function ViewerstreamPage() {
                       Price: {priceDisplay}
                     </p>
 
+                    {/* Variant selector */}
+                    {variants.length > 0 && (
+                      <div
+                        className="live-stream-variant-picker"
+                        style={{ marginTop: "0.5rem" }}
+                      >
+                        <label
+                          style={{
+                            display: "block",
+                            marginBottom: "0.25rem",
+                            fontSize: "0.9rem",
+                          }}
+                        >
+                          Select variant:
+                        </label>
+                        <select
+                          value={selectedVariantId || ""}
+                          onChange={(e) =>
+                            handleVariantChange(
+                              product.id,
+                              e.target.value,
+                            )
+                          }
+                          style={{
+                            width: "100%",
+                            padding: "0.35rem",
+                          }}
+                        >
+                          {variants.map((variant) => (
+                            <option
+                              key={variant.id}
+                              value={variant.id}
+                              disabled={!variant.availableForSale}
+                            >
+                              {variant.title}
+                              {variant.price
+                                ? ` – ${variant.price.amount} ${variant.price.currencyCode}`
+                                : ""}
+                              {!variant.availableForSale
+                                ? " (Sold out)"
+                                : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Add to cart & go to checkout */}
+                    <button
+                      type="button"
+                      className="live-stream-view-button"
+                      style={{ marginTop: "0.75rem" }}
+                      onClick={() =>
+                        handleAddToCartAndCheckout(product, 1)
+                      }
+                      disabled={variants.length === 0}
+                    >
+                      Add to cart & go to checkout
+                    </button>
+
+                    {/* Optional: keep the "View product" link */}
                     {productUrl && (
                       <a
                         href={productUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="live-stream-view-button"
+                        style={{
+                          marginTop: "0.5rem",
+                          marginLeft: "0.5rem",
+                        }}
                       >
                         View product
                       </a>
@@ -436,31 +610,62 @@ export default function ViewerstreamPage() {
 
         <div className="live-stream-chat-messages">
           {messages.length === 0 ? (
-            <p style={{ color: "#777", margin: 0 }}>No messages yet. Be the first to chat!</p>
+            <p style={{ color: "#777", margin: 0 }}>
+              No messages yet. Be the first to chat!
+            </p>
           ) : (
             messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`live-stream-chat-message ${msg.isPending ? 'live-stream-chat-message-pending' : ''} ${msg.clientId === clientId ? 'live-stream-chat-message-own' : ''}`}
+                className={`live-stream-chat-message ${
+                  msg.isPending
+                    ? "live-stream-chat-message-pending"
+                    : ""
+                } ${
+                  msg.clientId === clientId
+                    ? "live-stream-chat-message-own"
+                    : ""
+                }`}
               >
-                <span className={`live-stream-chat-author ${msg.clientId === clientId ? 'live-stream-chat-author-own' : ''}`}>
+                <span
+                  className={`live-stream-chat-author ${
+                    msg.clientId === clientId
+                      ? "live-stream-chat-author-own"
+                      : ""
+                  }`}
+                >
                   {msg.author || "Viewer"}:
                 </span>
                 <span>{msg.text}</span>
-                {msg.isPending && <span className="live-stream-chat-pending">(sending...)</span>}
+                {msg.isPending && (
+                  <span className="live-stream-chat-pending">
+                    (sending...)
+                  </span>
+                )}
                 <span className="live-stream-chat-time">
-                  {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : ""}
+                  {msg.timestamp
+                    ? new Date(
+                        msg.timestamp,
+                      ).toLocaleTimeString()
+                    : ""}
                 </span>
               </div>
             ))
           )}
         </div>
 
-        <form className="live-stream-chat-form" onSubmit={handleChatSubmit}>
+        <form
+          className="live-stream-chat-form"
+          onSubmit={handleChatSubmit}
+        >
           <input
             type="text"
             className="live-stream-chat-input"
-            placeholder={isConnected ? "Type your message..." : "Connecting to chat..."}
+            placeholder={
+              isConnected
+                ? "Type your message..."
+                : "Connecting to chat..."
+            }
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             disabled={!isConnected}

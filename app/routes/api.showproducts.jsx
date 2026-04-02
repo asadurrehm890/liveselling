@@ -2,6 +2,51 @@
 import { unauthenticated } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
+const VIEWER_STREAM_PRODUCTS_QUERY = `#graphql
+  query ViewerStreamProducts($ids: [ID!]!) {
+    nodes(ids: $ids) {
+      ... on Product {
+        id
+        title
+        handle
+        featuredImage {
+          url
+          altText
+        }
+        priceRange {
+          minVariantPrice {
+            amount
+            currencyCode
+          }
+          maxVariantPrice {
+            amount
+            currencyCode
+          }
+        }
+        options(first: 10) {
+          name
+          values
+        }
+        variants(first: 50) {
+          nodes {
+            id
+            title
+            availableForSale
+            selectedOptions {
+              name
+              value
+            }
+            price {
+              amount
+              currencyCode
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 export const loader = async ({ request }) => {
   const url = new URL(request.url);
   const shop = url.searchParams.get("shop");
@@ -21,7 +66,7 @@ export const loader = async ({ request }) => {
     return new Response(
       JSON.stringify({
         error:
-          "Missing ?ids=1,2,3 or ?ids=gid://shopify/Product/...,gid://shopify/Product/...",
+          "Missing ?ids=gid://shopify/Product/...,gid://shopify/Product/... or numeric IDs",
       }),
       {
         status: 400,
@@ -46,41 +91,23 @@ export const loader = async ({ request }) => {
     );
   }
 
-  // Allow both numeric IDs (1,2,3) and full GIDs
+  // Allow numeric IDs (1,2,3) or full GIDs
   const ids = rawIds.map((id) =>
     id.startsWith("gid://shopify/Product/")
       ? id
       : `gid://shopify/Product/${id}`,
   );
 
-  let admin;
+  let storefront;
 
   try {
-    const ctx = await unauthenticated.admin(shop);
-    admin = ctx.admin;
-    // const session = ctx.session; // available if you need shop-specific data
+    const ctx = await unauthenticated.storefront(shop);
+    storefront = ctx.storefront;
   } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes("Could not find a session for shop")
-    ) {
-      return new Response(
-        JSON.stringify({
-          error:
-            "No offline session for this shop. Make sure the app is installed on this store and opened at least once in the Shopify Admin.",
-          shop,
-        }),
-        {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    console.error("Error creating unauthenticated admin context:", error);
+    console.error("Error creating unauthenticated storefront context:", error);
     return new Response(
       JSON.stringify({
-        error: "Failed to create unauthenticated admin context.",
+        error: "Failed to create unauthenticated storefront context.",
       }),
       {
         status: 500,
@@ -89,47 +116,17 @@ export const loader = async ({ request }) => {
     );
   }
 
-  // Call Admin GraphQL using the validated ShowProducts query
-  const response = await admin.graphql(
-    `#graphql
-      query ShowProducts($ids: [ID!]!) {
-        nodes(ids: $ids) {
-          ... on Product {
-            id
-            title
-            handle
-            status
-            featuredImage {
-              url
-              altText
-            }
-            priceRangeV2 {
-              minVariantPrice {
-                amount
-                currencyCode
-              }
-              maxVariantPrice {
-                amount
-                currencyCode
-              }
-            }
-          }
-        }
-      }
-    `,
-    {
-      variables: {
-        ids,
-      },
-    },
-  );
+  // Call Storefront GraphQL
+  const response = await storefront.graphql(VIEWER_STREAM_PRODUCTS_QUERY, {
+    variables: { ids },
+  });
 
   const json = await response.json();
 
   if (!json.data || !json.data.nodes) {
     return new Response(
       JSON.stringify({
-        error: "Unexpected response from Admin API",
+        error: "Unexpected response from Storefront API",
         raw: json,
       }),
       {
@@ -139,10 +136,16 @@ export const loader = async ({ request }) => {
     );
   }
 
-  // Filter out nulls (if some IDs were not Products)
+  // Filter out nulls (if some IDs weren’t Products)
   const products = (json.data.nodes || []).filter(Boolean);
 
-  return new Response(JSON.stringify({ products }), {
+  // For backwards-compat with your viewerstream.jsx code
+  const mappedProducts = products.map((p) => ({
+    ...p,
+    priceRangeV2: p.priceRange, // so product.priceRangeV2 still works
+  }));
+
+  return new Response(JSON.stringify({ products: mappedProducts }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
@@ -151,6 +154,3 @@ export const loader = async ({ request }) => {
 export const headers = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
-
-// IMPORTANT: no default export here so this stays a resource route
-// (React Router sends loader Response body directly for HTTP requests)
