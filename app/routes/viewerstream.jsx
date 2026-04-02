@@ -23,15 +23,19 @@ export default function ViewerstreamPage() {
   const channelRef = useRef(null);
   
   // Create a unique client ID for this browser session
-  const [clientId] = useState(() => {
-    // Generate or retrieve a unique ID for this client
+  // FIXED: Initialize with null first, then set in useEffect
+  const [clientId, setClientId] = useState(null);
+
+  // Generate client ID only on the client side
+  useEffect(() => {
+    // This code only runs in the browser, not during SSR
     let id = localStorage.getItem('chat_client_id');
     if (!id) {
       id = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       localStorage.setItem('chat_client_id', id);
     }
-    return id;
-  });
+    setClientId(id);
+  }, []);
 
   // Load products for this stream
   useEffect(() => {
@@ -68,7 +72,8 @@ export default function ViewerstreamPage() {
 
   // Set up Pusher connection for chat
   useEffect(() => {
-    if (!streamId) return;
+    // Don't set up Pusher until we have both streamId and clientId
+    if (!streamId || !clientId) return;
 
     // Get Pusher credentials from window.ENV
     const pusherKey = window.ENV?.PUSHER_KEY;
@@ -174,7 +179,7 @@ export default function ViewerstreamPage() {
         pusherRef.current.disconnect();
       }
     };
-  }, [streamId, clientId]); // Add clientId to dependencies
+  }, [streamId, clientId]); // Now clientId is safe to use
 
   const handleChatSubmit = async (e) => {
     e.preventDefault();
@@ -190,6 +195,12 @@ export default function ViewerstreamPage() {
     
     if (!streamId) {
       console.error("No stream ID available");
+      return;
+    }
+
+    if (!clientId) {
+      console.error("Client ID not initialized");
+      setChatError("Chat not ready. Please refresh the page.");
       return;
     }
 
@@ -493,7 +504,7 @@ export default function ViewerstreamPage() {
               ● Connected
             </span>
           )}
-          {!isConnected && (
+          {!isConnected && clientId && (
             <span style={{ fontSize: "0.8rem", marginLeft: "0.5rem", color: "orange" }}>
               ● Connecting...
             </span>
