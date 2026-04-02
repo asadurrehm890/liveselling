@@ -5,17 +5,11 @@ import { authenticate } from "../shopify.server";
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
 
-  // Shop domain, e.g. "burdauae.myshopify.com"
-  const shopDomain = session.shop;
-
-  // Build iframe src using the shop domain
-  const iframeSrc = `https://liveselling-eta.vercel.app/sellerstream?shop=burdauae.myshopify.com`;
-
-  return { iframeSrc };
+ 
 };
 
 export default function SellerLiveStream() {
-  const { iframeSrc } = useLoaderData();
+  
 
   return (
     <s-page heading="Additional page">
@@ -54,7 +48,7 @@ export default function SellerLiveStream() {
           minHeight="400px"
         >
           <iframe
-            src={iframeSrc}
+            src="https://liveselling-eta.vercel.app/sellerstream?shop=burdauae.myshopify.com"
             title="Seller Live stream"
             style={{
               width: "100%",
