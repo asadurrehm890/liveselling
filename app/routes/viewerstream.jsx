@@ -25,9 +25,11 @@ export default function ViewerstreamPage() {
   // Create a unique client ID for this browser session
   const [clientId, setClientId] = useState(null);
 
+  // Track selected variants for each product
+  const [selectedVariants, setSelectedVariants] = useState({});
+
   // Generate client ID only on the client side
   useEffect(() => {
-    // This code only runs in the browser, not during SSR
     let id = localStorage.getItem('chat_client_id');
     if (!id) {
       id = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -59,6 +61,15 @@ export default function ViewerstreamPage() {
       })
       .then((data) => {
         setProducts(data.products || []);
+        // Initialize selected variants with first available variant for each product
+        const initialVariants = {};
+        (data.products || []).forEach(product => {
+          const availableVariant = product.variants?.find(v => v.availableForSale) || product.variants?.[0];
+          if (availableVariant) {
+            initialVariants[product.id] = availableVariant;
+          }
+        });
+        setSelectedVariants(initialVariants);
       })
       .catch((err) => {
         console.error("Error fetching products:", err);
@@ -71,14 +82,11 @@ export default function ViewerstreamPage() {
 
   // Set up Pusher connection for chat
   useEffect(() => {
-    // Don't set up Pusher until we have both streamId and clientId
     if (!streamId || !clientId) return;
 
-    // Get Pusher credentials from window.ENV
     const pusherKey = window.ENV?.PUSHER_KEY;
     const pusherCluster = window.ENV?.PUSHER_CLUSTER;
 
-    // Debug: Log what we have
     console.log('Pusher config from window.ENV:', {
       hasKey: !!pusherKey,
       keyPrefix: pusherKey ? pusherKey.substring(0, 8) : 'none',
@@ -87,16 +95,14 @@ export default function ViewerstreamPage() {
       clientId: clientId
     });
 
-    // Check if credentials are available
     if (!pusherKey || !pusherCluster) {
-      console.error('Pusher credentials not found. Make sure environment variables are set.');
+      console.error('Pusher credentials not found.');
       setChatError("Chat configuration error. Please contact support.");
       return;
     }
 
-    // Validate that we're not using placeholder values
     if (pusherKey === 'YOUR_PUSHER_KEY' || pusherKey.includes('YOUR_')) {
-      console.error('Invalid Pusher key. Please set correct credentials in Vercel environment variables.');
+      console.error('Invalid Pusher key.');
       setChatError("Chat configuration error. Invalid API key.");
       return;
     }
@@ -106,7 +112,6 @@ export default function ViewerstreamPage() {
     try {
       console.log('Initializing Pusher with cluster:', pusherCluster);
       
-      // Initialize Pusher
       const pusher = new Pusher(pusherKey, {
         cluster: pusherCluster,
         forceTLS: true,
@@ -115,7 +120,6 @@ export default function ViewerstreamPage() {
 
       pusherRef.current = pusher;
 
-      // Connection event handlers
       pusher.connection.bind('connected', () => {
         console.log('✅ Connected to Pusher');
         setIsConnected(true);
@@ -123,7 +127,6 @@ export default function ViewerstreamPage() {
       });
 
       pusher.connection.bind('disconnected', () => {
-        console.log('🔌 Disconnected from Pusher');
         setIsConnected(false);
       });
 
@@ -133,18 +136,15 @@ export default function ViewerstreamPage() {
         setIsConnected(false);
       });
 
-      // Subscribe to the stream's channel
       const channelName = `stream-${streamId}`;
       const channel = pusher.subscribe(channelName);
       channelRef.current = channel;
 
-      // Bind to the 'new-message' event - FILTER OUT OWN MESSAGES
       channel.bind('new-message', (message) => {
         console.log('📨 Received message from Pusher:', message);
         
-        // Don't add the message if it came from this client
         if (message.clientId === clientId) {
-          console.log('🔇 Ignoring own message from Pusher (already displayed)');
+          console.log('🔇 Ignoring own message from Pusher');
           return;
         }
         
@@ -152,12 +152,10 @@ export default function ViewerstreamPage() {
         setMessages((prev) => [...prev, message]);
       });
 
-      // Handle subscription success
       channel.bind('pusher:subscription_succeeded', () => {
         console.log(`✅ Subscribed to channel: ${channelName}`);
       });
 
-      // Handle subscription error
       channel.bind('pusher:subscription_error', (error) => {
         console.error(`❌ Subscription error:`, error);
         setChatError("Failed to join chat room. Please refresh the page.");
@@ -168,7 +166,6 @@ export default function ViewerstreamPage() {
       setChatError("Failed to initialize chat. Please check your configuration.");
     }
 
-    // Cleanup on unmount
     return () => {
       if (channelRef.current) {
         channelRef.current.unbind_all();
@@ -183,29 +180,19 @@ export default function ViewerstreamPage() {
   const handleChatSubmit = async (e) => {
     e.preventDefault();
     
-    if (!chatInput.trim()) {
-      return;
-    }
-    
+    if (!chatInput.trim()) return;
     if (!isConnected) {
       setChatError("Chat not connected. Please wait for connection or refresh the page.");
       return;
     }
-    
-    if (!streamId) {
-      console.error("No stream ID available");
-      return;
-    }
-
+    if (!streamId) return;
     if (!clientId) {
-      console.error("Client ID not initialized");
       setChatError("Chat not ready. Please refresh the page.");
       return;
     }
 
     const text = chatInput.trim();
     
-    // Create message with client ID to identify it came from this user
     const tempMessage = {
       id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       author: "Viewer", 
@@ -216,23 +203,13 @@ export default function ViewerstreamPage() {
       isPending: true
     };
 
-    // Add to UI immediately (optimistic update)
     setMessages((prev) => [...prev, tempMessage]);
     setChatInput("");
 
     try {
-      console.log('📤 Sending message to API:', {
-        streamId: streamId,
-        text: text,
-        author: "Viewer",
-        clientId: clientId
-      });
-
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           streamId: streamId,
           text: text,
@@ -250,24 +227,50 @@ export default function ViewerstreamPage() {
       const data = await response.json();
       console.log('📤 Message sent successfully:', data);
       
-      // Update the pending message to confirmed
       setMessages((prev) => 
         prev.map(msg => 
-          msg.id === tempMessage.id 
-            ? { ...msg, isPending: false }
-            : msg
+          msg.id === tempMessage.id ? { ...msg, isPending: false } : msg
         )
       );
       
     } catch (err) {
       console.error('Error sending message:', err);
       setChatError(`Failed to send message: ${err.message}`);
-      
-      // Remove the failed message
-      setMessages((prev) => 
-        prev.filter(msg => msg.id !== tempMessage.id)
-      );
+      setMessages((prev) => prev.filter(msg => msg.id !== tempMessage.id));
     }
+  };
+
+  // Handle variant selection change
+  const handleVariantChange = (productId, variantId) => {
+    const product = products.find(p => p.id === productId);
+    const variant = product?.variants?.find(v => v.id === variantId);
+    if (variant) {
+      setSelectedVariants(prev => ({
+        ...prev,
+        [productId]: variant
+      }));
+    }
+  };
+
+  // Get product URL with selected variant
+  const getProductUrl = (product, variant) => {
+    if (!shop) return null;
+    let url = `https://${shop}/products/${product.handle}`;
+    if (variant && variant.selectedOptions?.length > 0) {
+      const variantParams = variant.selectedOptions
+        .map(opt => `${encodeURIComponent(opt.name)}=${encodeURIComponent(opt.value)}`)
+        .join('&');
+      if (variantParams) {
+        url += `?${variantParams}`;
+      }
+    }
+    return url;
+  };
+
+  // Format price
+  const formatPrice = (price) => {
+    if (!price) return "N/A";
+    return `${price.amount} ${price.currencyCode}`;
   };
 
   return (
@@ -290,8 +293,7 @@ export default function ViewerstreamPage() {
         )}
         {!idsParam && (
           <div className="live-stream-error">
-            Missing <code>ids</code> parameter in URL (comma-separated product
-            IDs).
+            Missing <code>ids</code> parameter in URL.
           </div>
         )}
       </header>
@@ -326,40 +328,16 @@ export default function ViewerstreamPage() {
           <h2 className="live-stream-section-title">Products in this stream</h2>
           <div className="live-stream-products-grid">
             {products.map((product) => {
-              const image = product.featuredImage;
-              const priceRange = product.priceRangeV2;
-
-              const minPrice = priceRange?.minVariantPrice;
-              const maxPrice = priceRange?.maxVariantPrice;
-
-              const formatPrice = (p) =>
-                p ? `${p.amount} ${p.currencyCode ?? ""}`.trim() : "N/A";
-
-              let priceDisplay = "N/A";
-              if (minPrice && maxPrice) {
-                if (
-                  minPrice.amount === maxPrice.amount &&
-                  minPrice.currencyCode === maxPrice.currencyCode
-                ) {
-                  priceDisplay = formatPrice(minPrice);
-                } else {
-                  priceDisplay = `${formatPrice(minPrice)} – ${formatPrice(maxPrice)}`;
-                }
-              }
-
-              const productUrl = shop
-                ? `https://${shop}/products/${product.handle}`
-                : null;
+              const selectedVariant = selectedVariants[product.id];
+              const image = selectedVariant?.image || product.featuredImage;
+              const price = selectedVariant?.price || product.priceRangeV2?.minVariantPrice;
+              const isAvailable = selectedVariant?.availableForSale !== false;
+              const productUrl = getProductUrl(product, selectedVariant);
 
               return (
                 <article key={product.id} className="live-stream-product-card">
                   {image ? (
-                    <a
-                      href={productUrl || "#"}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ display: "block" }}
-                    >
+                    <a href={productUrl || "#"} target="_blank" rel="noopener noreferrer">
                       <img
                         src={image.url}
                         alt={image.altText || product.title}
@@ -374,38 +352,88 @@ export default function ViewerstreamPage() {
 
                   <div className="live-stream-product-details">
                     <h3 className="live-stream-product-name">
-                      {productUrl ? (
-                        <a
-                          href={productUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            color: "inherit",
-                            textDecoration: "none",
-                          }}
-                        >
-                          {product.title}
-                        </a>
-                      ) : (
-                        product.title
-                      )}
+                      <a
+                        href={productUrl || "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {product.title}
+                      </a>
                     </h3>
+                    
                     <p className="live-stream-product-meta">
                       {product.handle}
                       {product.status ? ` – ${product.status}` : ""}
                     </p>
+
+                    {/* Variant Options */}
+                    {product.options && product.options.length > 0 && (
+                      <div className="live-stream-variant-options">
+                        {product.options.map((option) => {
+                          const currentVariant = selectedVariants[product.id];
+                          const currentValue = currentVariant?.selectedOptions?.find(
+                            opt => opt.name === option.name
+                          )?.value || option.values[0];
+                          
+                          return (
+                            <div key={option.id} className="live-stream-variant-option">
+                              <label className="live-stream-variant-label">{option.name}:</label>
+                              <select
+                                className="live-stream-variant-select"
+                                value={currentValue}
+                                onChange={(e) => {
+                                  const newVariant = product.variants?.find(v =>
+                                    v.selectedOptions?.some(
+                                      opt => opt.name === option.name && opt.value === e.target.value
+                                    )
+                                  );
+                                  if (newVariant) {
+                                    handleVariantChange(product.id, newVariant.id);
+                                  }
+                                }}
+                              >
+                                {option.values.map((value) => {
+                                  const variantForValue = product.variants?.find(v =>
+                                    v.selectedOptions?.some(
+                                      opt => opt.name === option.name && opt.value === value
+                                    )
+                                  );
+                                  return (
+                                    <option 
+                                      key={value} 
+                                      value={value}
+                                      disabled={!variantForValue?.availableForSale}
+                                    >
+                                      {value} {!variantForValue?.availableForSale ? '(Sold Out)' : ''}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Price */}
                     <p className="live-stream-product-price">
-                      Price: {priceDisplay}
+                      Price: {formatPrice(price)}
+                      {!isAvailable && <span className="live-stream-sold-out"> (Sold Out)</span>}
                     </p>
 
+                    {/* View Product Button */}
                     {productUrl && (
                       <a
                         href={productUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="live-stream-view-button"
+                        style={{ 
+                          backgroundColor: isAvailable ? 'var(--color-button-primary-background)' : '#cccccc',
+                          cursor: isAvailable ? 'pointer' : 'not-allowed'
+                        }}
                       >
-                        View product
+                        {isAvailable ? 'View product' : 'Sold Out'}
                       </a>
                     )}
                   </div>

@@ -58,7 +58,6 @@ export const loader = async ({ request }) => {
   try {
     const ctx = await unauthenticated.admin(shop);
     admin = ctx.admin;
-    // const session = ctx.session; // available if you need shop-specific data
   } catch (error) {
     if (
       error instanceof Error &&
@@ -89,7 +88,7 @@ export const loader = async ({ request }) => {
     );
   }
 
-  // Call Admin GraphQL using the validated ShowProducts query
+  // ✅ Updated query: `price` is scalar, no sub-selection
   const response = await admin.graphql(
     `#graphql
       query ShowProducts($ids: [ID!]!) {
@@ -99,6 +98,7 @@ export const loader = async ({ request }) => {
             title
             handle
             status
+            description
             featuredImage {
               url
               altText
@@ -112,6 +112,29 @@ export const loader = async ({ request }) => {
                 amount
                 currencyCode
               }
+            }
+            variants(first: 250) {
+              edges {
+                node {
+                  id
+                  title
+                  price
+                  availableForSale
+                  selectedOptions {
+                    name
+                    value
+                  }
+                  image {
+                    url
+                    altText
+                  }
+                }
+              }
+            }
+            options {
+              id
+              name
+              values
             }
           }
         }
@@ -139,8 +162,14 @@ export const loader = async ({ request }) => {
     );
   }
 
-  // Filter out nulls (if some IDs were not Products)
-  const products = (json.data.nodes || []).filter(Boolean);
+  // Filter out nulls (if some IDs were not Products) and transform data
+  const products = (json.data.nodes || [])
+    .filter(Boolean)
+    .map((product) => ({
+      ...product,
+      variants: product.variants?.edges?.map((edge) => edge.node) || [],
+      options: product.options || [],
+    }));
 
   return new Response(JSON.stringify({ products }), {
     status: 200,
@@ -151,6 +180,3 @@ export const loader = async ({ request }) => {
 export const headers = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
-
-// IMPORTANT: no default export here so this stays a resource route
-// (React Router sends loader Response body directly for HTTP requests)
