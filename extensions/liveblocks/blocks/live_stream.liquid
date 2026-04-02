@@ -1,0 +1,141 @@
+<!-- sections/live-stream.liquid -->
+<div class="live-stream-section">
+  <div class="page-width">
+    
+    {% if section.settings.title != blank %}
+      <h2 class="live-stream-title">{{ section.settings.title }}</h2>
+    {% endif %}
+    
+    {% if section.settings.description != blank %}
+      <div class="live-stream-description">
+        {{ section.settings.description }}
+      </div>
+    {% endif %}
+    
+    <div class="live-stream-iframe-wrapper">
+      <iframe
+        id="live-stream-iframe"
+        class="live-stream-iframe"
+        src=""
+        width="100%"
+        height="{{ section.settings.iframe_height }}"
+        frameborder="0"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowfullscreen
+        loading="lazy"
+      ></iframe>
+    </div>
+    
+  </div>
+</div>
+
+<style>
+  .live-stream-section {
+    margin: 50px 0;
+  }
+  
+  .live-stream-title {
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  
+  .live-stream-description {
+    text-align: center;
+    margin-bottom: 30px;
+    color: #666;
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  
+  .live-stream-iframe-wrapper {
+    position: relative;
+    padding-bottom: 56.25%; /* 16:9 aspect ratio */
+    height: 0;
+    overflow: hidden;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  }
+  
+  .live-stream-iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+  }
+  
+  @media (max-width: 768px) {
+    .live-stream-section {
+      margin: 30px 0;
+    }
+  }
+</style>
+
+<script>
+  (function() {
+    const shopDomain = "{{ shop.permanent_domain }}";
+    const vercelAppUrl = "{{ section.settings.vercel_app_url | default: 'https://liveselling-eta.vercel.app' }}";
+    const iframeUrl = `${vercelAppUrl}/sellerstream?shop=${encodeURIComponent(shopDomain)}`;
+    
+    const iframe = document.getElementById('live-stream-iframe');
+    if (iframe) {
+      iframe.src = iframeUrl;
+    }
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Live Stream",
+  "settings": [
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Title",
+      "default": "Live Stream"
+    },
+    {
+      "type": "textarea",
+      "id": "description",
+      "label": "Description",
+      "default": "Join our live stream to see products in action!"
+    },
+    {
+      "type": "select",
+      "id": "iframe_height",
+      "label": "Aspect Ratio",
+      "options": [
+        {
+          "value": "56.25%",
+          "label": "16:9 (Standard)"
+        },
+        {
+          "value": "75%",
+          "label": "4:3"
+        },
+        {
+          "value": "42.85%",
+          "label": "21:9 (Cinematic)"
+        }
+      ],
+      "default": "56.25%",
+      "info": "Sets the iframe aspect ratio"
+    },
+    {
+      "type": "text",
+      "id": "vercel_app_url",
+      "label": "Vercel App URL",
+      "default": "https://liveselling-eta.vercel.app",
+      "info": "Your deployed Vercel app URL"
+    }
+  ],
+  "presets": [
+    {
+      "name": "Live Stream",
+      "category": "Video"
+    }
+  ]
+}
+{% endschema %}
