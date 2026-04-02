@@ -3,6 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import Pusher from 'pusher-js';
 
+// Extract numeric ID from a GraphQL GID like "gid://shopify/ProductVariant/1234567890"
+const getNumericIdFromGid = (gid) => {
+  if (!gid) return null;
+  const parts = gid.split('/');
+  return parts[parts.length - 1] || null;
+};
+
 export default function ViewerstreamPage() {
   const [searchParams] = useSearchParams();
 
@@ -252,6 +259,28 @@ export default function ViewerstreamPage() {
     }
   };
 
+  // Handle "Add to Cart & Checkout" button click
+  const handleBuyNow = (productId) => {
+    const product = products.find(p => p.id === productId);
+    const selectedVariant = selectedVariants[productId];
+
+    if (!product || !selectedVariant) {
+      alert("No variant selected for this product.");
+      return;
+    }
+
+    const checkoutUrl = getCheckoutUrl(product, selectedVariant);
+    if (!checkoutUrl) {
+      alert("Could not create checkout link. Please try again.");
+      return;
+    }
+
+    // Redirect viewer to Shopify checkout
+    window.location.href = checkoutUrl;
+    // Or open in new tab:
+    // window.open(checkoutUrl, "_blank");
+  };
+
   // Get product URL with selected variant
   const getProductUrl = (product, variant) => {
     if (!shop) return null;
@@ -264,6 +293,24 @@ export default function ViewerstreamPage() {
         url += `?${variantParams}`;
       }
     }
+    return url;
+  };
+
+  // Get checkout URL for a given product + selected variant
+  const getCheckoutUrl = (product, variant) => {
+    if (!shop || !variant?.id) return null;
+
+    // If your variant IDs are GraphQL GIDs, convert them
+    const numericVariantId = getNumericIdFromGid(variant.id);
+    if (!numericVariantId) return null;
+
+    const quantity = 1; // adjust if you want more than 1
+    // Cart permalink: https://{shop}/cart/{variant_id}:{quantity}
+    let url = `https://${shop}/cart/${numericVariantId}:${quantity}`;
+
+    // Optional tracking parameters (example)
+    // url += `?utm_source=livestream&utm_medium=viewerstream`;
+
     return url;
   };
 
@@ -436,6 +483,27 @@ export default function ViewerstreamPage() {
                         {isAvailable ? 'View product' : 'Sold Out'}
                       </a>
                     )}
+
+                    {/* Add to Cart & Checkout Button */}
+                    <button
+                      type="button"
+                      className="live-stream-buy-button"
+                      onClick={() => handleBuyNow(product.id)}
+                      disabled={!isAvailable}
+                      style={{ 
+                        marginTop: '0.5rem',
+                        width: '100%',
+                        padding: '0.75rem 1rem',
+                        border: 'none',
+                        borderRadius: '4px',
+                        backgroundColor: isAvailable ? '#008060' : '#cccccc',
+                        color: 'white',
+                        fontWeight: 'bold',
+                        cursor: isAvailable ? 'pointer' : 'not-allowed'
+                      }}
+                    >
+                      {isAvailable ? 'Add to cart & checkout' : 'Sold Out'}
+                    </button>
                   </div>
                 </article>
               );
