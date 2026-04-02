@@ -22,7 +22,6 @@ export const loader = async ({ request }) => {
     // Uses offline session stored in your Prisma Session table
     const ctx = await unauthenticated.admin(shop);
     admin = ctx.admin;
-    // const session = ctx.session; // available if you need shop-specific data
   } catch (error) {
     if (
       error instanceof Error &&
@@ -62,7 +61,7 @@ export const loader = async ({ request }) => {
     const response = await admin.graphql(
       `#graphql
         query AllProductsPage($first: Int!, $after: String) {
-          products(first: $first, after: $after) {
+          products(first: $first, after: $after, query: "status:active") {
             edges {
               node {
                 id
@@ -120,10 +119,6 @@ export const loader = async ({ request }) => {
   });
 };
 
-// Optional, but fine to keep for consistency
 export const headers = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
-
-// ❌ DO NOT export a default component here
-// export default function ApiSelectAllProducts() { return null; }
