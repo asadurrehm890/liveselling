@@ -9,11 +9,11 @@ export const loader = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
   
-  // Fetch products for the store
+  // Fetch ONLY ACTIVE products (status: ACTIVE)
   const response = await admin.graphql(
     `#graphql
       query GetAllProducts {
-        products(first: 250) {
+        products(first: 250, query: "status:active") {
           edges {
             node {
               id
@@ -66,17 +66,8 @@ export default function SellerLiveStream() {
   
   const [streamId, setStreamId] = useState("");
   const [selectedProductIds, setSelectedProductIds] = useState([]);
-  const [selectedProducts, setSelectedProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  
-  // Initialize selected products when products load
-  useEffect(() => {
-    if (products && selectedProductIds.length > 0) {
-      const selected = products.filter(p => selectedProductIds.includes(p.id));
-      setSelectedProducts(selected);
-    }
-  }, [products, selectedProductIds]);
   
   const toggleProduct = (productId) => {
     setSelectedProductIds(prev => 
@@ -94,10 +85,9 @@ export default function SellerLiveStream() {
     setSelectedProductIds([]);
   };
   
-  // FIXED: Handle text field input correctly
-  const handleStreamIdChange = (value) => {
-    // Polaris s-text-field passes the value directly, not an event
-    setStreamId(value);
+  // FIXED: Handle input change correctly for standard input
+  const handleStreamIdChange = (e) => {
+    setStreamId(e.target.value);
   };
   
   const saveStream = async () => {
@@ -125,7 +115,6 @@ export default function SellerLiveStream() {
       
       if (response.ok) {
         shopify.toast.show(`Stream "${streamId}" saved successfully!`);
-        // Refresh the page to show updated streams
         window.location.reload();
       } else {
         throw new Error("Failed to save stream");
@@ -176,7 +165,7 @@ export default function SellerLiveStream() {
     const idsParam = selectedProductIds.join(",");
     const url = `/viewerstream?shop=${encodeURIComponent(shop)}&streamId=${encodeURIComponent(streamId)}&ids=${encodeURIComponent(idsParam)}`;
     
-    // Open in new tab (this bypasses the iframe CSP issue)
+    console.log("Opening URL:", url);
     window.open(url, "_blank");
   };
   
@@ -249,7 +238,7 @@ export default function SellerLiveStream() {
         </s-card>
       )}
       
-      {/* Main Form */}
+      {/* Main Form - USING STANDARD HTML INPUT to avoid Polaris issues */}
       <s-card>
         <s-text variant="headingMd" as="h2">
           {streamId ? `Editing: ${streamId}` : "Create New Stream"}
@@ -257,20 +246,34 @@ export default function SellerLiveStream() {
         <s-divider />
         
         <div style={{ marginTop: "16px" }}>
-          {/* Stream ID field - FIXED */}
-          <s-text-field
-            label="Stream ID"
-            value={streamId}
-            onChange={handleStreamIdChange}
-            placeholder="Enter a unique stream ID (e.g., summer-sale-2024)"
-            helpText="This ID will be used in the viewer URL"
-            required
-          />
+          {/* Stream ID field - Using standard HTML input */}
+          <div style={{ marginBottom: "24px" }}>
+            <label style={{ display: "block", marginBottom: "8px", fontWeight: 600 }}>
+              Stream ID *
+            </label>
+            <input
+              type="text"
+              value={streamId}
+              onChange={handleStreamIdChange}
+              placeholder="Enter a unique stream ID (e.g., summer-sale-2024)"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                fontSize: "14px",
+                border: "1px solid #d6d6d6",
+                borderRadius: "4px",
+                fontFamily: "inherit"
+              }}
+            />
+            <div style={{ marginTop: "4px", fontSize: "12px", color: "#6b6b6b" }}>
+              This ID will be used in the viewer URL
+            </div>
+          </div>
           
           {/* Product selection */}
           <div style={{ marginTop: "24px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-              <s-text variant="headingSm">Select Products</s-text>
+              <s-text variant="headingSm">Select Products (Active Products Only)</s-text>
               <div style={{ display: "flex", gap: "8px" }}>
                 <s-button onClick={selectAllProducts} variant="tertiary">Select All</s-button>
                 <s-button onClick={clearAllProducts} variant="tertiary">Clear All</s-button>
@@ -278,7 +281,7 @@ export default function SellerLiveStream() {
             </div>
             
             {!products || products.length === 0 ? (
-              <s-text tone="subdued">Loading products...</s-text>
+              <s-text tone="subdued">No active products found...</s-text>
             ) : (
               <div style={{
                 border: "1px solid #e1e1e1",
