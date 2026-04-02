@@ -4,8 +4,8 @@ import { useSearchParams, useNavigate } from "react-router";
 
 export default function SellerstreamPublicPage() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate(); // 👈 NEW
-  const shop = searchParams.get("shop"); // e.g. "store-name.myshopify.com"
+  const navigate = useNavigate();
+  const shop = searchParams.get("shop");
 
   const [streamId, setStreamId] = useState("");
   const [products, setProducts] = useState([]);
@@ -47,7 +47,7 @@ export default function SellerstreamPublicPage() {
     setSelectedProductIds((current) =>
       current.includes(id)
         ? current.filter((pId) => pId !== id)
-        : [...current, id],
+        : [...current, id]
     );
   };
 
@@ -76,58 +76,37 @@ export default function SellerstreamPublicPage() {
   };
 
   return (
-    <div
-      style={{
-        maxWidth: "800px",
-        margin: "0 auto",
-        padding: "2rem 1rem",
-        fontFamily:
-          "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-      }}
-    >
-      <h1>Sellerstream Live</h1>
+    <div className="live-stream-container">
+      <h1 className="live-stream-title">Sellerstream Live</h1>
 
       {!shop && (
-        <p style={{ color: "red" }}>
+        <div className="live-stream-error">
           Add <code>?shop=your-store.myshopify.com</code> to the URL.
-        </p>
+        </div>
       )}
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
+      {error && <div className="live-stream-error">{error}</div>}
 
       <form onSubmit={handleSubmit}>
         {/* Stream ID field */}
-        <div style={{ marginBottom: "1.5rem" }}>
-          <label
-            htmlFor="streamId"
-            style={{
-              display: "block",
-              marginBottom: "0.5rem",
-              fontWeight: 600,
-            }}
-          >
+        <div className="live-stream-form-group">
+          <label htmlFor="streamId" className="live-stream-label">
             Stream ID
           </label>
           <input
             id="streamId"
             name="streamId"
             type="text"
+            className="live-stream-input"
             value={streamId}
             onChange={(e) => setStreamId(e.target.value)}
             placeholder="Enter your stream ID"
             required
-            style={{
-              width: "100%",
-              padding: "0.5rem 0.75rem",
-              borderRadius: "4px",
-              border: "1px solid #ccc",
-              fontSize: "1rem",
-            }}
           />
         </div>
 
         {/* Product list */}
-        <div style={{ marginBottom: "1.5rem" }}>
+        <div className="live-stream-form-group">
           <div
             style={{
               display: "flex",
@@ -136,56 +115,35 @@ export default function SellerstreamPublicPage() {
               marginBottom: "0.5rem",
             }}
           >
-            <label style={{ fontWeight: 600 }}>
+            <label className="live-stream-label">
               Select products to feature in the stream
             </label>
             {loadingProducts && (
-              <span style={{ fontSize: "0.875rem", color: "#666" }}>
+              <span className="live-stream-info" style={{ fontSize: "0.875rem" }}>
                 Loading products...
               </span>
             )}
           </div>
 
           {products.length === 0 && !loadingProducts && (
-            <p style={{ color: "#666" }}>No products found for this shop.</p>
+            <p className="live-stream-info">No products found for this shop.</p>
           )}
 
           {products.length > 0 && (
-            <div
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: "4px",
-                padding: "0.75rem",
-                maxHeight: "300px",
-                overflowY: "auto",
-              }}
-            >
-              <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            <div className="live-stream-product-grid">
+              <ul className="live-stream-product-list">
                 {products.map((product) => (
-                  <li
-                    key={product.id}
-                    style={{
-                      marginBottom: "0.5rem",
-                      borderBottom: "1px solid #f1f1f1",
-                      paddingBottom: "0.5rem",
-                    }}
-                  >
-                    <label
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                        cursor: "pointer",
-                      }}
-                    >
+                  <li key={product.id} className="live-stream-product-item">
+                    <label className="live-stream-product-label">
                       <input
                         type="checkbox"
+                        className="live-stream-product-checkbox"
                         checked={selectedProductIds.includes(product.id)}
                         onChange={() => toggleProduct(product.id)}
                       />
-                      <div>
-                        <div style={{ fontWeight: 500 }}>{product.title}</div>
-                        <div style={{ fontSize: "0.85rem", color: "#666" }}>
+                      <div className="live-stream-product-info">
+                        <div className="live-stream-product-title">{product.title}</div>
+                        <div className="live-stream-product-handle">
                           {product.handle}
                           {product.status ? ` – ${product.status}` : ""}
                         </div>
@@ -201,23 +159,8 @@ export default function SellerstreamPublicPage() {
         {/* Live stream button */}
         <button
           type="submit"
+          className="live-stream-button live-stream-button-primary"
           disabled={!streamId || selectedProductIds.length === 0 || !shop}
-          style={{
-            padding: "0.75rem 1.5rem",
-            fontSize: "1rem",
-            fontWeight: 600,
-            borderRadius: "4px",
-            border: "none",
-            backgroundColor:
-              !streamId || selectedProductIds.length === 0 || !shop
-                ? "#cccccc"
-                : "#008060",
-            color: "#ffffff",
-            cursor:
-              !streamId || selectedProductIds.length === 0 || !shop
-                ? "not-allowed"
-                : "pointer",
-          }}
         >
           Go live
         </button>

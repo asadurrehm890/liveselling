@@ -23,7 +23,6 @@ export default function ViewerstreamPage() {
   const channelRef = useRef(null);
   
   // Create a unique client ID for this browser session
-  // FIXED: Initialize with null first, then set in useEffect
   const [clientId, setClientId] = useState(null);
 
   // Generate client ID only on the client side
@@ -179,7 +178,7 @@ export default function ViewerstreamPage() {
         pusherRef.current.disconnect();
       }
     };
-  }, [streamId, clientId]); // Now clientId is safe to use
+  }, [streamId, clientId]);
 
   const handleChatSubmit = async (e) => {
     e.preventDefault();
@@ -213,7 +212,7 @@ export default function ViewerstreamPage() {
       text: text,
       timestamp: new Date().toISOString(),
       streamId: streamId,
-      clientId: clientId, // Add client ID to identify this message
+      clientId: clientId,
       isPending: true
     };
 
@@ -239,7 +238,7 @@ export default function ViewerstreamPage() {
           text: text,
           author: "Viewer",
           timestamp: new Date().toISOString(),
-          clientId: clientId // Send client ID to server
+          clientId: clientId
         })
       });
 
@@ -272,41 +271,33 @@ export default function ViewerstreamPage() {
   };
 
   return (
-    <div
-      style={{
-        maxWidth: "960px",
-        margin: "0 auto",
-        padding: "2rem 1rem",
-        fontFamily:
-          "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-      }}
-    >
+    <div className="live-stream-container">
       <header style={{ marginBottom: "2rem" }}>
-        <h1 style={{ marginBottom: "0.25rem" }}>Live Stream</h1>
+        <h1 className="live-stream-title">Live Stream</h1>
         {streamId ? (
           <p style={{ margin: 0, color: "#555" }}>
             Stream ID: <strong>{streamId}</strong>
           </p>
         ) : (
-          <p style={{ margin: 0, color: "red" }}>
+          <div className="live-stream-error">
             Missing <code>streamId</code> in URL.
-          </p>
+          </div>
         )}
         {!shop && (
-          <p style={{ margin: "0.5rem 0 0", color: "red" }}>
+          <div className="live-stream-error">
             Missing <code>shop</code> parameter in URL.
-          </p>
+          </div>
         )}
         {!idsParam && (
-          <p style={{ margin: "0.25rem 0 0", color: "red" }}>
+          <div className="live-stream-error">
             Missing <code>ids</code> parameter in URL (comma-separated product
             IDs).
-          </p>
+          </div>
         )}
       </header>
 
       {/* Live stream iframe */}
-      <div style={{ marginBottom: "2rem" }}>
+      <div className="live-stream-iframe-wrapper">
         <iframe
           src="https://embed.api.video/live/li40wqrTDScsJm4f5xT1qK2m"
           width="100%"
@@ -315,47 +306,25 @@ export default function ViewerstreamPage() {
           scrolling="no"
           allowFullScreen={true}
           title="Live stream"
+          className="live-stream-iframe"
         ></iframe>
       </div>
 
-      {error && (
-        <p style={{ color: "red", marginBottom: "1rem" }}>
-          {error}
-        </p>
-      )}
+      {error && <div className="live-stream-error">{error}</div>}
+      {chatError && <div className="live-stream-warning">⚠️ {chatError}</div>}
 
-      {chatError && (
-        <p style={{ 
-          color: "orange", 
-          marginBottom: "1rem", 
-          backgroundColor: "#fff3e0", 
-          padding: "0.5rem", 
-          borderRadius: "4px" 
-        }}>
-          ⚠️ {chatError}
-        </p>
-      )}
-
-      {loadingProducts && (
-        <p style={{ color: "#666" }}>Loading products for this stream…</p>
-      )}
+      {loadingProducts && <div className="live-stream-loading">Loading products for this stream…</div>}
 
       {!loadingProducts && !error && products.length === 0 && (
-        <p style={{ color: "#666" }}>
+        <div className="live-stream-info">
           No products found for this stream. Check the <code>ids</code> param.
-        </p>
+        </div>
       )}
 
       {!loadingProducts && products.length > 0 && (
         <section style={{ marginBottom: "2rem" }}>
-          <h2 style={{ marginBottom: "1rem" }}>Products in this stream</h2>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: "1rem",
-            }}
-          >
+          <h2 className="live-stream-section-title">Products in this stream</h2>
+          <div className="live-stream-products-grid">
             {products.map((product) => {
               const image = product.featuredImage;
               const priceRange = product.priceRangeV2;
@@ -383,17 +352,7 @@ export default function ViewerstreamPage() {
                 : null;
 
               return (
-                <article
-                  key={product.id}
-                  style={{
-                    border: "1px solid #e1e1e1",
-                    borderRadius: "8px",
-                    overflow: "hidden",
-                    display: "flex",
-                    flexDirection: "column",
-                    background: "#fff",
-                  }}
-                >
+                <article key={product.id} className="live-stream-product-card">
                   {image ? (
                     <a
                       href={productUrl || "#"}
@@ -404,33 +363,17 @@ export default function ViewerstreamPage() {
                       <img
                         src={image.url}
                         alt={image.altText || product.title}
-                        style={{
-                          width: "100%",
-                          height: "180px",
-                          objectFit: "cover",
-                          display: "block",
-                        }}
+                        className="live-stream-product-image"
                       />
                     </a>
                   ) : (
-                    <div
-                      style={{
-                        width: "100%",
-                        height: "180px",
-                        background: "#f5f5f5",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: "#999",
-                        fontSize: "0.9rem",
-                      }}
-                    >
+                    <div className="live-stream-product-image-placeholder">
                       No image
                     </div>
                   )}
 
-                  <div style={{ padding: "0.75rem 0.9rem 1rem" }}>
-                    <h3 style={{ margin: "0 0 0.25rem", fontSize: "1.05rem" }}>
+                  <div className="live-stream-product-details">
+                    <h3 className="live-stream-product-name">
                       {productUrl ? (
                         <a
                           href={productUrl}
@@ -447,23 +390,11 @@ export default function ViewerstreamPage() {
                         product.title
                       )}
                     </h3>
-                    <p
-                      style={{
-                        margin: "0 0 0.5rem",
-                        fontSize: "0.9rem",
-                        color: "#666",
-                      }}
-                    >
+                    <p className="live-stream-product-meta">
                       {product.handle}
                       {product.status ? ` – ${product.status}` : ""}
                     </p>
-                    <p
-                      style={{
-                        margin: 0,
-                        fontWeight: 600,
-                        fontSize: "0.98rem",
-                      }}
-                    >
+                    <p className="live-stream-product-price">
                       Price: {priceDisplay}
                     </p>
 
@@ -472,17 +403,7 @@ export default function ViewerstreamPage() {
                         href={productUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        style={{
-                          display: "inline-block",
-                          marginTop: "0.5rem",
-                          padding: "0.4rem 0.8rem",
-                          fontSize: "0.9rem",
-                          fontWeight: 600,
-                          borderRadius: "4px",
-                          backgroundColor: "#008060",
-                          color: "#fff",
-                          textDecoration: "none",
-                        }}
+                        className="live-stream-view-button"
                       >
                         View product
                       </a>
@@ -496,120 +417,58 @@ export default function ViewerstreamPage() {
       )}
 
       {/* Chat section */}
-      <section>
-        <h2 style={{ marginBottom: "0.75rem" }}>
-          Live Chat
-          {isConnected && (
-            <span style={{ fontSize: "0.8rem", marginLeft: "0.5rem", color: "green" }}>
-              ● Connected
-            </span>
-          )}
-          {!isConnected && clientId && (
-            <span style={{ fontSize: "0.8rem", marginLeft: "0.5rem", color: "orange" }}>
-              ● Connecting...
-            </span>
-          )}
-        </h2>
+      <section className="live-stream-chat-section">
+        <div className="live-stream-chat-header">
+          <h2 className="live-stream-chat-title">
+            Live Chat
+            {isConnected && (
+              <span className="live-stream-chat-status live-stream-chat-status-connected">
+                ● Connected
+              </span>
+            )}
+            {!isConnected && clientId && (
+              <span className="live-stream-chat-status live-stream-chat-status-connecting">
+                ● Connecting...
+              </span>
+            )}
+          </h2>
+        </div>
 
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: "8px",
-            padding: "0.75rem",
-            minHeight: "250px",
-            maxHeight: "300px",
-            overflowY: "auto",
-            marginBottom: "0.75rem",
-            background: "#fafafa",
-          }}
-        >
+        <div className="live-stream-chat-messages">
           {messages.length === 0 ? (
             <p style={{ color: "#777", margin: 0 }}>No messages yet. Be the first to chat!</p>
           ) : (
-            <ul
-              style={{
-                listStyle: "none",
-                margin: 0,
-                padding: 0,
-              }}
-            >
-              {messages.map((msg) => (
-                <li
-                  key={msg.id}
-                  style={{
-                    marginBottom: "0.5rem",
-                    fontSize: "0.9rem",
-                    padding: "0.25rem",
-                    borderBottom: "1px solid #eee",
-                    opacity: msg.isPending ? 0.6 : 1,
-                    backgroundColor: msg.clientId === clientId ? "#f0f9ff" : "transparent",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontWeight: 600,
-                      marginRight: "0.25rem",
-                      color: msg.clientId === clientId ? "#008060" : "#666",
-                    }}
-                  >
-                    {msg.author || "Viewer"}:
-                  </span>
-                  <span>{msg.text}</span>
-                  {msg.isPending && (
-                    <span style={{ marginLeft: "0.5rem", fontSize: "0.7rem", color: "#999" }}>
-                      (sending...)
-                    </span>
-                  )}
-                  <span
-                    style={{
-                      marginLeft: "0.5rem",
-                      fontSize: "0.7rem",
-                      color: "#999",
-                    }}
-                  >
-                    {msg.timestamp
-                      ? new Date(msg.timestamp).toLocaleTimeString()
-                      : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`live-stream-chat-message ${msg.isPending ? 'live-stream-chat-message-pending' : ''} ${msg.clientId === clientId ? 'live-stream-chat-message-own' : ''}`}
+              >
+                <span className={`live-stream-chat-author ${msg.clientId === clientId ? 'live-stream-chat-author-own' : ''}`}>
+                  {msg.author || "Viewer"}:
+                </span>
+                <span>{msg.text}</span>
+                {msg.isPending && <span className="live-stream-chat-pending">(sending...)</span>}
+                <span className="live-stream-chat-time">
+                  {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : ""}
+                </span>
+              </div>
+            ))
           )}
         </div>
 
-        <form onSubmit={handleChatSubmit} style={{ display: "flex", gap: "0.5rem" }}>
+        <form className="live-stream-chat-form" onSubmit={handleChatSubmit}>
           <input
             type="text"
+            className="live-stream-chat-input"
             placeholder={isConnected ? "Type your message..." : "Connecting to chat..."}
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             disabled={!isConnected}
-            style={{
-              flex: 1,
-              padding: "0.5rem 0.75rem",
-              borderRadius: "4px",
-              border: "1px solid #ccc",
-              fontSize: "0.95rem",
-              backgroundColor: !isConnected ? "#f5f5f5" : "white",
-            }}
           />
           <button
             type="submit"
+            className="live-stream-chat-send"
             disabled={!streamId || !chatInput.trim() || !isConnected}
-            style={{
-              padding: "0.5rem 1rem",
-              fontSize: "0.95rem",
-              fontWeight: 600,
-              borderRadius: "4px",
-              border: "none",
-              backgroundColor: !streamId || !chatInput.trim() || !isConnected 
-                ? "#ccc" 
-                : "#008060",
-              color: "#fff",
-              cursor: !streamId || !chatInput.trim() || !isConnected 
-                ? "not-allowed" 
-                : "pointer",
-            }}
           >
             Send
           </button>
