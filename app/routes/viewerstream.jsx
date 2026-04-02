@@ -6,9 +6,9 @@ import Pusher from 'pusher-js';
 export default function ViewerstreamPage() {
   const [searchParams] = useSearchParams();
 
-  const shop = searchParams.get("shop"); // e.g. "checkcos.myshopify.com"
+  const shop = searchParams.get("shop");
   const streamId = searchParams.get("streamId");
-  const idsParam = searchParams.get("ids"); // "1,2,3" or "gid://shopify/Product/..."
+  const idsParam = searchParams.get("ids");
 
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
@@ -59,16 +59,42 @@ export default function ViewerstreamPage() {
   useEffect(() => {
     if (!streamId) return;
 
+    // Get Pusher credentials from window.ENV
+    const pusherKey = window.ENV?.PUSHER_KEY;
+    const pusherCluster = window.ENV?.PUSHER_CLUSTER;
+
+    // Debug: Log what we have
+    console.log('Pusher config from window.ENV:', {
+      hasKey: !!pusherKey,
+      keyPrefix: pusherKey ? pusherKey.substring(0, 8) : 'none',
+      cluster: pusherCluster,
+      streamId: streamId
+    });
+
+    // Check if credentials are available
+    if (!pusherKey || !pusherCluster) {
+      console.error('Pusher credentials not found. Make sure environment variables are set.');
+      setChatError("Chat configuration error. Please contact support.");
+      return;
+    }
+
+    // Validate that we're not using placeholder values
+    if (pusherKey === 'YOUR_PUSHER_KEY' || pusherKey.includes('YOUR_')) {
+      console.error('Invalid Pusher key. Please set correct credentials in Vercel environment variables.');
+      setChatError("Chat configuration error. Invalid API key.");
+      return;
+    }
+
     setChatError("");
     
     try {
-      // Initialize Pusher with your key and cluster
-      // IMPORTANT: Replace 'YOUR_PUSHER_KEY' and 'YOUR_CLUSTER' with your actual values
-      // In production, you should use environment variables
-      const pusher = new Pusher(process.env.PUSHER_KEY || 'YOUR_PUSHER_KEY', {
-        cluster: process.env.PUSHER_CLUSTER || 'YOUR_CLUSTER',
+      console.log('Initializing Pusher with cluster:', pusherCluster);
+      
+      // Initialize Pusher
+      const pusher = new Pusher(pusherKey, {
+        cluster: pusherCluster,
         forceTLS: true,
-        enabledTransports: ['ws', 'wss'], // WebSocket only
+        enabledTransports: ['ws', 'wss'],
       });
 
       pusherRef.current = pusher;
@@ -133,7 +159,6 @@ export default function ViewerstreamPage() {
   const handleChatSubmit = async (e) => {
     e.preventDefault();
     
-    // Validation checks
     if (!chatInput.trim()) {
       return;
     }
@@ -156,14 +181,12 @@ export default function ViewerstreamPage() {
       text: text,
       timestamp: new Date().toISOString(),
       streamId: streamId,
-      isPending: true // Mark as pending until confirmed
+      isPending: true
     };
 
-    // Add to messages immediately (optimistic update)
     setMessages((prev) => [...prev, tempMessage]);
     setChatInput("");
 
-    // Send to server via API
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -185,7 +208,6 @@ export default function ViewerstreamPage() {
       const data = await response.json();
       console.log('📤 Message sent successfully:', data);
       
-      // Remove the pending flag from the temporary message
       setMessages((prev) => 
         prev.map(msg => 
           msg.id === tempMessage.id 
@@ -198,13 +220,13 @@ export default function ViewerstreamPage() {
       console.error('Error sending message:', err);
       setChatError("Failed to send message. Please try again.");
       
-      // Remove the failed message or mark as failed
       setMessages((prev) => 
         prev.filter(msg => msg.id !== tempMessage.id)
       );
     }
   };
 
+  // ... rest of your component JSX (keep the same as before)
   return (
     <div
       style={{
