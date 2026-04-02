@@ -2,6 +2,7 @@
 import { unauthenticated } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
+// Storefront API query – validated against Storefront schema
 const VIEWER_STREAM_PRODUCTS_QUERY = `#graphql
   query ViewerStreamProducts($ids: [ID!]!) {
     nodes(ids: $ids) {
@@ -91,7 +92,7 @@ export const loader = async ({ request }) => {
     );
   }
 
-  // Allow numeric IDs (1,2,3) or full GIDs
+  // Allow both numeric IDs and full GIDs
   const ids = rawIds.map((id) =>
     id.startsWith("gid://shopify/Product/")
       ? id
@@ -104,10 +105,19 @@ export const loader = async ({ request }) => {
     const ctx = await unauthenticated.storefront(shop);
     storefront = ctx.storefront;
   } catch (error) {
-    console.error("Error creating unauthenticated storefront context:", error);
+    console.error(
+      "Error creating unauthenticated storefront context for",
+      shop,
+      ":",
+      error,
+    );
+
+    // Common cause: Storefront access token not configured
     return new Response(
       JSON.stringify({
-        error: "Failed to create unauthenticated storefront context.",
+        error:
+          "Failed to create unauthenticated storefront context. Check Storefront API configuration for this shop.",
+        detail: error instanceof Error ? error.message : String(error),
       }),
       {
         status: 500,
@@ -116,39 +126,73 @@ export const loader = async ({ request }) => {
     );
   }
 
-  // Call Storefront GraphQL
-  const response = await storefront.graphql(VIEWER_STREAM_PRODUCTS_QUERY, {
-    variables: { ids },
-  });
+  try {
+    const response = await storefront.graphql(VIEWER_STREAM_PRODUCTS_QUERY, {
+      variables: { ids },
+    });
 
-  const json = await response.json();
+    const json = await response.json();
 
-  if (!json.data || !json.data.nodes) {
+    if (json.errors && json.errors.length) {
+      console.error(
+        "Storefront GraphQL errors in /api/showproducts:",
+        JSON.stringify(json.errors, null, 2),
+      );
+      return new Response(
+        JSON.stringify({
+          error: "Storefront GraphQL error",
+          details: json.errors,
+        }),
+        {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (!json.data || !json.data.nodes) {
+      console.error(
+        "Unexpected Storefront response in /api/showproducts:",
+        JSON.stringify(json, null, 2),
+      );
+      return new Response(
+        JSON.stringify({
+          error: "Unexpected response from Storefront API",
+          raw: json,
+        }),
+        {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    // Filter out nulls (if some IDs are not Products)
+    const products = (json.data.nodes || []).filter(Boolean);
+
+    // Map priceRange -> priceRangeV2 to keep your existing viewer code working
+    const mappedProducts = products.map((p) => ({
+      ...p,
+      priceRangeV2: p.priceRange,
+    }));
+
+    return new Response(JSON.stringify({ products: mappedProducts }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    console.error("Unexpected error in /api/showproducts:", error);
     return new Response(
       JSON.stringify({
-        error: "Unexpected response from Storefront API",
-        raw: json,
+        error: "Unexpected server error in /api/showproducts",
+        detail: error instanceof Error ? error.message : String(error),
       }),
       {
-        status: 502,
+        status: 500,
         headers: { "Content-Type": "application/json" },
       },
     );
   }
-
-  // Filter out nulls (if some IDs weren’t Products)
-  const products = (json.data.nodes || []).filter(Boolean);
-
-  // For backwards-compat with your viewerstream.jsx code
-  const mappedProducts = products.map((p) => ({
-    ...p,
-    priceRangeV2: p.priceRange, // so product.priceRangeV2 still works
-  }));
-
-  return new Response(JSON.stringify({ products: mappedProducts }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
 };
 
 export const headers = (headersArgs) => {
