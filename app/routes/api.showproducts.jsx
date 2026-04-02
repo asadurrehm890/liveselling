@@ -88,7 +88,7 @@ export const loader = async ({ request }) => {
     );
   }
 
-  // ✅ Updated query: `price` is scalar, no sub-selection
+  // price is a scalar Money in Admin API; no sub-selection
   const response = await admin.graphql(
     `#graphql
       query ShowProducts($ids: [ID!]!) {
