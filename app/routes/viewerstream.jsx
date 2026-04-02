@@ -1,7 +1,7 @@
 // app/routes/viewerstream.jsx
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
-import { io } from "socket.io-client";
+import Pusher from 'pusher-js';
 
 export default function ViewerstreamPage() {
   const [searchParams] = useSearchParams();
@@ -13,12 +13,14 @@ export default function ViewerstreamPage() {
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [error, setError] = useState("");
-  const [socketError, setSocketError] = useState("");
+  const [chatError, setChatError] = useState("");
 
   // Chat state
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
-  const socketRef = useRef(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const pusherRef = useRef(null);
+  const channelRef = useRef(null);
 
   // Load products for this stream
   useEffect(() => {
@@ -53,84 +55,82 @@ export default function ViewerstreamPage() {
       });
   }, [shop, idsParam]);
 
-  // Set up socket.io connection for chat - UPDATED FOR VERCEL
+  // Set up Pusher connection for chat
   useEffect(() => {
     if (!streamId) return;
 
-    // Clear any previous socket errors
-    setSocketError("");
+    setChatError("");
     
-    // Get the current hostname (your Vercel app URL)
-    // This will work both locally and in production
-    const socketUrl = window.location.origin;
-    
-    console.log("🔌 Connecting to socket server at:", socketUrl);
-    console.log("📡 Stream ID:", streamId);
-    
-    // Create socket connection with proper configuration for Vercel
-    const socket = io(socketUrl, {
-      path: '/api/socket',  // Important: matches the API route path
-      transports: [ 'polling'],  // Fallback to polling if websocket fails
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-      timeout: 10000,
-      forceNew: true  // Create a new connection each time
-    });
+    try {
+      // Initialize Pusher with your key and cluster
+      // IMPORTANT: Replace 'YOUR_PUSHER_KEY' and 'YOUR_CLUSTER' with your actual values
+      // In production, you should use environment variables
+      const pusher = new Pusher(process.env.PUSHER_KEY || 'YOUR_PUSHER_KEY', {
+        cluster: process.env.PUSHER_CLUSTER || 'YOUR_CLUSTER',
+        forceTLS: true,
+        enabledTransports: ['ws', 'wss'], // WebSocket only
+      });
 
-    socketRef.current = socket;
+      pusherRef.current = pusher;
 
-    // Connection event handlers
-    socket.on('connect', () => {
-      console.log('✅ Connected to chat server with ID:', socket.id);
-      setSocketError("");
-      // Join the stream room after successful connection
-      socket.emit("joinStream", { streamId });
-    });
+      // Connection event handlers
+      pusher.connection.bind('connected', () => {
+        console.log('✅ Connected to Pusher');
+        setIsConnected(true);
+        setChatError("");
+      });
 
-    socket.on('connect_error', (error) => {
-      console.error('❌ Socket connection error:', error);
-      setSocketError("Chat server connection failed. Messages may not work. Please refresh the page.");
-    });
+      pusher.connection.bind('disconnected', () => {
+        console.log('🔌 Disconnected from Pusher');
+        setIsConnected(false);
+      });
 
-    socket.on('disconnect', (reason) => {
-      console.log('🔌 Disconnected from chat server:', reason);
-      if (reason === 'io server disconnect') {
-        // Reconnect if server disconnected
-        socket.connect();
-      }
-    });
+      pusher.connection.bind('error', (error) => {
+        console.error('❌ Pusher connection error:', error);
+        setChatError("Chat connection failed. Please refresh the page.");
+        setIsConnected(false);
+      });
 
-    socket.on('reconnect', (attemptNumber) => {
-      console.log('🔄 Reconnected to chat server after', attemptNumber, 'attempts');
-      setSocketError("");
-      // Rejoin the stream after reconnection
-      if (streamId) {
-        socket.emit("joinStream", { streamId });
-      }
-    });
+      // Subscribe to the stream's channel
+      const channelName = `stream-${streamId}`;
+      const channel = pusher.subscribe(channelName);
+      channelRef.current = channel;
 
-    socket.on('reconnect_error', (error) => {
-      console.error('❌ Reconnection error:', error);
-      setSocketError("Chat server reconnection failed. Please refresh the page.");
-    });
+      // Bind to the 'new-message' event
+      channel.bind('new-message', (message) => {
+        console.log('📨 Received message:', message);
+        setMessages((prev) => [...prev, message]);
+      });
 
-    // Listen for incoming chat messages
-    socket.on("chatMessage", (message) => {
-      console.log('📨 Received message:', message);
-      setMessages((prev) => [...prev, message]);
-    });
+      // Handle subscription success
+      channel.bind('pusher:subscription_succeeded', () => {
+        console.log(`✅ Subscribed to channel: ${channelName}`);
+      });
+
+      // Handle subscription error
+      channel.bind('pusher:subscription_error', (error) => {
+        console.error(`❌ Subscription error:`, error);
+        setChatError("Failed to join chat room. Please refresh the page.");
+      });
+
+    } catch (error) {
+      console.error('Pusher initialization error:', error);
+      setChatError("Failed to initialize chat. Please check your configuration.");
+    }
 
     // Cleanup on unmount
     return () => {
-      if (socket) {
-        socket.disconnect();
-        socketRef.current = null;
+      if (channelRef.current) {
+        channelRef.current.unbind_all();
+        channelRef.current.unsubscribe();
+      }
+      if (pusherRef.current) {
+        pusherRef.current.disconnect();
       }
     };
   }, [streamId]);
 
-  const handleChatSubmit = (e) => {
+  const handleChatSubmit = async (e) => {
     e.preventDefault();
     
     // Validation checks
@@ -138,15 +138,8 @@ export default function ViewerstreamPage() {
       return;
     }
     
-    if (!socketRef.current) {
-      console.error("No socket connection available");
-      setSocketError("Chat connection not available. Please refresh the page.");
-      return;
-    }
-    
-    if (!socketRef.current.connected) {
-      console.error("Socket not connected");
-      setSocketError("Chat disconnected. Please wait for reconnection or refresh.");
+    if (!isConnected) {
+      setChatError("Chat not connected. Please wait for connection or refresh the page.");
       return;
     }
     
@@ -157,27 +150,59 @@ export default function ViewerstreamPage() {
 
     const text = chatInput.trim();
     
-    const myMsg = {
+    const tempMessage = {
       id: Date.now() + Math.random(),
       author: "Viewer", 
       text: text,
-      ts: new Date().toISOString(),
-      streamId: streamId // CRITICAL: This must match the room ID
+      timestamp: new Date().toISOString(),
+      streamId: streamId,
+      isPending: true // Mark as pending until confirmed
     };
 
-    // Add to your own screen immediately
-    setMessages((prev) => [...prev, myMsg]);
+    // Add to messages immediately (optimistic update)
+    setMessages((prev) => [...prev, tempMessage]);
+    setChatInput("");
 
-    // Send to server
+    // Send to server via API
     try {
-      socketRef.current.emit("chatMessage", myMsg);
-      console.log('📤 Message sent:', myMsg);
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          streamId: streamId,
+          text: text,
+          author: "Viewer",
+          timestamp: new Date().toISOString()
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to send message');
+      }
+
+      const data = await response.json();
+      console.log('📤 Message sent successfully:', data);
+      
+      // Remove the pending flag from the temporary message
+      setMessages((prev) => 
+        prev.map(msg => 
+          msg.id === tempMessage.id 
+            ? { ...msg, isPending: false }
+            : msg
+        )
+      );
+      
     } catch (err) {
       console.error('Error sending message:', err);
-      setSocketError("Failed to send message. Please try again.");
+      setChatError("Failed to send message. Please try again.");
+      
+      // Remove the failed message or mark as failed
+      setMessages((prev) => 
+        prev.filter(msg => msg.id !== tempMessage.id)
+      );
     }
-    
-    setChatInput("");
   };
 
   return (
@@ -233,9 +258,15 @@ export default function ViewerstreamPage() {
         </p>
       )}
 
-      {socketError && (
-        <p style={{ color: "orange", marginBottom: "1rem", backgroundColor: "#fff3e0", padding: "0.5rem", borderRadius: "4px" }}>
-          ⚠️ {socketError}
+      {chatError && (
+        <p style={{ 
+          color: "orange", 
+          marginBottom: "1rem", 
+          backgroundColor: "#fff3e0", 
+          padding: "0.5rem", 
+          borderRadius: "4px" 
+        }}>
+          ⚠️ {chatError}
         </p>
       )}
 
@@ -260,142 +291,140 @@ export default function ViewerstreamPage() {
             }}
           >
             {products.map((product) => {
-  const image = product.featuredImage;
-  const priceRange = product.priceRangeV2;
+              const image = product.featuredImage;
+              const priceRange = product.priceRangeV2;
 
-  const minPrice = priceRange?.minVariantPrice;
-  const maxPrice = priceRange?.maxVariantPrice;
+              const minPrice = priceRange?.minVariantPrice;
+              const maxPrice = priceRange?.maxVariantPrice;
 
-  const formatPrice = (p) =>
-    p ? `${p.amount} ${p.currencyCode ?? ""}`.trim() : "N/A";
+              const formatPrice = (p) =>
+                p ? `${p.amount} ${p.currencyCode ?? ""}`.trim() : "N/A";
 
-  let priceDisplay = "N/A";
-  if (minPrice && maxPrice) {
-    if (
-      minPrice.amount === maxPrice.amount &&
-      minPrice.currencyCode === maxPrice.currencyCode
-    ) {
-      priceDisplay = formatPrice(minPrice);
-    } else {
-      priceDisplay = `${formatPrice(minPrice)} – ${formatPrice(maxPrice)}`;
-    }
-  }
+              let priceDisplay = "N/A";
+              if (minPrice && maxPrice) {
+                if (
+                  minPrice.amount === maxPrice.amount &&
+                  minPrice.currencyCode === maxPrice.currencyCode
+                ) {
+                  priceDisplay = formatPrice(minPrice);
+                } else {
+                  priceDisplay = `${formatPrice(minPrice)} – ${formatPrice(maxPrice)}`;
+                }
+              }
 
-  // 👇 Build the product URL using the shop + handle
-  const productUrl = shop
-    ? `https://${shop}/products/${product.handle}`
-    : null;
+              const productUrl = shop
+                ? `https://${shop}/products/${product.handle}`
+                : null;
 
-  return (
-    <article
-      key={product.id}
-      style={{
-        border: "1px solid #e1e1e1",
-        borderRadius: "8px",
-        overflow: "hidden",
-        display: "flex",
-        flexDirection: "column",
-        background: "#fff",
-      }}
-    >
-      {image ? (
-        <a
-          href={productUrl || "#"}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ display: "block" }}
-        >
-          <img
-            src={image.url}
-            alt={image.altText || product.title}
-            style={{
-              width: "100%",
-              height: "180px",
-              objectFit: "cover",
-              display: "block",
-            }}
-          />
-        </a>
-      ) : (
-        <div
-          style={{
-            width: "100%",
-            height: "180px",
-            background: "#f5f5f5",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#999",
-            fontSize: "0.9rem",
-          }}
-        >
-          No image
-        </div>
-      )}
+              return (
+                <article
+                  key={product.id}
+                  style={{
+                    border: "1px solid #e1e1e1",
+                    borderRadius: "8px",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                    background: "#fff",
+                  }}
+                >
+                  {image ? (
+                    <a
+                      href={productUrl || "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ display: "block" }}
+                    >
+                      <img
+                        src={image.url}
+                        alt={image.altText || product.title}
+                        style={{
+                          width: "100%",
+                          height: "180px",
+                          objectFit: "cover",
+                          display: "block",
+                        }}
+                      />
+                    </a>
+                  ) : (
+                    <div
+                      style={{
+                        width: "100%",
+                        height: "180px",
+                        background: "#f5f5f5",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#999",
+                        fontSize: "0.9rem",
+                      }}
+                    >
+                      No image
+                    </div>
+                  )}
 
-      <div style={{ padding: "0.75rem 0.9rem 1rem" }}>
-        <h3 style={{ margin: "0 0 0.25rem", fontSize: "1.05rem" }}>
-          {productUrl ? (
-            <a
-              href={productUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                color: "inherit",
-                textDecoration: "none",
-              }}
-            >
-              {product.title}
-            </a>
-          ) : (
-            product.title
-          )}
-        </h3>
-        <p
-          style={{
-            margin: "0 0 0.5rem",
-            fontSize: "0.9rem",
-            color: "#666",
-          }}
-        >
-          {product.handle}
-          {product.status ? ` – ${product.status}` : ""}
-        </p>
-        <p
-          style={{
-            margin: 0,
-            fontWeight: 600,
-            fontSize: "0.98rem",
-          }}
-        >
-          Price: {priceDisplay}
-        </p>
+                  <div style={{ padding: "0.75rem 0.9rem 1rem" }}>
+                    <h3 style={{ margin: "0 0 0.25rem", fontSize: "1.05rem" }}>
+                      {productUrl ? (
+                        <a
+                          href={productUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            color: "inherit",
+                            textDecoration: "none",
+                          }}
+                        >
+                          {product.title}
+                        </a>
+                      ) : (
+                        product.title
+                      )}
+                    </h3>
+                    <p
+                      style={{
+                        margin: "0 0 0.5rem",
+                        fontSize: "0.9rem",
+                        color: "#666",
+                      }}
+                    >
+                      {product.handle}
+                      {product.status ? ` – ${product.status}` : ""}
+                    </p>
+                    <p
+                      style={{
+                        margin: 0,
+                        fontWeight: 600,
+                        fontSize: "0.98rem",
+                      }}
+                    >
+                      Price: {priceDisplay}
+                    </p>
 
-        {/* 👇 Explicit "View product" link/button */}
-        {productUrl && (
-          <a
-            href={productUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              display: "inline-block",
-              marginTop: "0.5rem",
-              padding: "0.4rem 0.8rem",
-              fontSize: "0.9rem",
-              fontWeight: 600,
-              borderRadius: "4px",
-              backgroundColor: "#008060",
-              color: "#fff",
-              textDecoration: "none",
-            }}
-          >
-            View product
-          </a>
-        )}
-      </div>
-    </article>
-  );
-})}
+                    {productUrl && (
+                      <a
+                        href={productUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display: "inline-block",
+                          marginTop: "0.5rem",
+                          padding: "0.4rem 0.8rem",
+                          fontSize: "0.9rem",
+                          fontWeight: 600,
+                          borderRadius: "4px",
+                          backgroundColor: "#008060",
+                          color: "#fff",
+                          textDecoration: "none",
+                        }}
+                      >
+                        View product
+                      </a>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </section>
       )}
@@ -404,12 +433,12 @@ export default function ViewerstreamPage() {
       <section>
         <h2 style={{ marginBottom: "0.75rem" }}>
           Live Chat
-          {socketRef.current?.connected && (
+          {isConnected && (
             <span style={{ fontSize: "0.8rem", marginLeft: "0.5rem", color: "green" }}>
               ● Connected
             </span>
           )}
-          {socketRef.current && !socketRef.current.connected && (
+          {!isConnected && (
             <span style={{ fontSize: "0.8rem", marginLeft: "0.5rem", color: "orange" }}>
               ● Connecting...
             </span>
@@ -422,6 +451,7 @@ export default function ViewerstreamPage() {
             borderRadius: "8px",
             padding: "0.75rem",
             minHeight: "250px",
+            maxHeight: "300px",
             overflowY: "auto",
             marginBottom: "0.75rem",
             background: "#fafafa",
@@ -445,6 +475,7 @@ export default function ViewerstreamPage() {
                     fontSize: "0.9rem",
                     padding: "0.25rem",
                     borderBottom: "1px solid #eee",
+                    opacity: msg.isPending ? 0.6 : 1,
                   }}
                 >
                   <span
@@ -457,6 +488,11 @@ export default function ViewerstreamPage() {
                     {msg.author || "Viewer"}:
                   </span>
                   <span>{msg.text}</span>
+                  {msg.isPending && (
+                    <span style={{ marginLeft: "0.5rem", fontSize: "0.7rem", color: "#999" }}>
+                      (sending...)
+                    </span>
+                  )}
                   <span
                     style={{
                       marginLeft: "0.5rem",
@@ -464,8 +500,8 @@ export default function ViewerstreamPage() {
                       color: "#999",
                     }}
                   >
-                    {msg.ts
-                      ? new Date(msg.ts).toLocaleTimeString()
+                    {msg.timestamp
+                      ? new Date(msg.timestamp).toLocaleTimeString()
                       : ""}
                   </span>
                 </li>
@@ -477,33 +513,33 @@ export default function ViewerstreamPage() {
         <form onSubmit={handleChatSubmit} style={{ display: "flex", gap: "0.5rem" }}>
           <input
             type="text"
-            placeholder={socketRef.current?.connected ? "Type your message..." : "Connecting to chat..."}
+            placeholder={isConnected ? "Type your message..." : "Connecting to chat..."}
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
-            disabled={!socketRef.current?.connected}
+            disabled={!isConnected}
             style={{
               flex: 1,
               padding: "0.5rem 0.75rem",
               borderRadius: "4px",
               border: "1px solid #ccc",
               fontSize: "0.95rem",
-              backgroundColor: !socketRef.current?.connected ? "#f5f5f5" : "white",
+              backgroundColor: !isConnected ? "#f5f5f5" : "white",
             }}
           />
           <button
             type="submit"
-            disabled={!streamId || !chatInput.trim() || !socketRef.current?.connected}
+            disabled={!streamId || !chatInput.trim() || !isConnected}
             style={{
               padding: "0.5rem 1rem",
               fontSize: "0.95rem",
               fontWeight: 600,
               borderRadius: "4px",
               border: "none",
-              backgroundColor: !streamId || !chatInput.trim() || !socketRef.current?.connected 
+              backgroundColor: !streamId || !chatInput.trim() || !isConnected 
                 ? "#ccc" 
                 : "#008060",
               color: "#fff",
-              cursor: !streamId || !chatInput.trim() || !socketRef.current?.connected 
+              cursor: !streamId || !chatInput.trim() || !isConnected 
                 ? "not-allowed" 
                 : "pointer",
             }}
