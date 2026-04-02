@@ -545,7 +545,7 @@ export default function ViewerstreamPage() {
                       {!isAvailable && <span className="live-stream-sold-out"> (Sold Out)</span>}
                     </p>
 
-                    {/* View Product Button */}
+                    {/* View Product Button 
                     {productUrl && (
                       <a
                         href={productUrl}
@@ -559,7 +559,7 @@ export default function ViewerstreamPage() {
                       >
                         {isAvailable ? 'View product' : 'Sold Out'}
                       </a>
-                    )}
+                    )}*/}
 
                     {/* Add to Cart & Checkout Button */}
                     <button
