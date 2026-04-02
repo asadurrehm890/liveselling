@@ -1,6 +1,7 @@
 // app/routes/app.sellerlive.jsx
 import { useState, useEffect } from "react";
 import { useLoaderData, useFetcher } from "react-router";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 
@@ -61,13 +62,13 @@ export const loader = async ({ request }) => {
 export default function SellerLiveStream() {
   const { shop, products, savedStreams } = useLoaderData();
   const fetcher = useFetcher();
+  const shopify = useAppBridge();
   
   const [streamId, setStreamId] = useState("");
   const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [viewerUrl, setViewerUrl] = useState("");
-  const [showViewer, setShowViewer] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Initialize selected products when products load
   useEffect(() => {
@@ -91,6 +92,12 @@ export default function SellerLiveStream() {
   
   const clearAllProducts = () => {
     setSelectedProductIds([]);
+  };
+  
+  // FIXED: Handle text field input correctly
+  const handleStreamIdChange = (value) => {
+    // Polaris s-text-field passes the value directly, not an event
+    setStreamId(value);
   };
   
   const saveStream = async () => {
@@ -118,6 +125,8 @@ export default function SellerLiveStream() {
       
       if (response.ok) {
         shopify.toast.show(`Stream "${streamId}" saved successfully!`);
+        // Refresh the page to show updated streams
+        window.location.reload();
       } else {
         throw new Error("Failed to save stream");
       }
@@ -126,6 +135,35 @@ export default function SellerLiveStream() {
       shopify.toast.show("Failed to save stream", { isError: true });
     } finally {
       setIsLoading(false);
+    }
+  };
+  
+  const deleteStream = async (streamIdToDelete) => {
+    if (!confirm(`Delete stream "${streamIdToDelete}"?`)) return;
+    
+    setIsDeleting(true);
+    
+    try {
+      const formData = new FormData();
+      formData.append("_method", "DELETE");
+      formData.append("streamId", streamIdToDelete);
+      
+      const response = await fetch("/api/streams", {
+        method: "POST",
+        body: formData
+      });
+      
+      if (response.ok) {
+        shopify.toast.show(`Stream "${streamIdToDelete}" deleted`);
+        window.location.reload();
+      } else {
+        throw new Error("Failed to delete stream");
+      }
+    } catch (err) {
+      console.error("Error deleting stream:", err);
+      shopify.toast.show("Failed to delete stream", { isError: true });
+    } finally {
+      setIsDeleting(false);
     }
   };
   
@@ -148,6 +186,11 @@ export default function SellerLiveStream() {
     shopify.toast.show(`Loaded stream: ${stream.streamId}`);
   };
   
+  const newStream = () => {
+    setStreamId("");
+    setSelectedProductIds([]);
+  };
+  
   return (
     <s-page heading="Live Stream Manager">
       <s-button 
@@ -159,8 +202,12 @@ export default function SellerLiveStream() {
         Start Live Stream
       </s-button>
       
+      <s-button slot="primary-action" onClick={newStream} variant="secondary">
+        + New Stream
+      </s-button>
+      
       {/* Saved Streams Section */}
-      {savedStreams.length > 0 && (
+      {savedStreams && savedStreams.length > 0 && (
         <s-card>
           <s-text variant="headingMd" as="h2">Saved Streams</s-text>
           <s-divider />
@@ -188,10 +235,11 @@ export default function SellerLiveStream() {
                 <s-button
                   onClick={(e) => {
                     e.stopPropagation();
-                    // Add delete functionality here
+                    deleteStream(stream.streamId);
                   }}
                   variant="monochrome"
                   tone="critical"
+                  loading={isDeleting}
                 >
                   Delete
                 </s-button>
@@ -209,11 +257,11 @@ export default function SellerLiveStream() {
         <s-divider />
         
         <div style={{ marginTop: "16px" }}>
-          {/* Stream ID field */}
+          {/* Stream ID field - FIXED */}
           <s-text-field
             label="Stream ID"
             value={streamId}
-            onChange={(value) => setStreamId(value)}
+            onChange={handleStreamIdChange}
             placeholder="Enter a unique stream ID (e.g., summer-sale-2024)"
             helpText="This ID will be used in the viewer URL"
             required
