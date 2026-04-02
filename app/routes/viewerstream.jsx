@@ -21,6 +21,17 @@ export default function ViewerstreamPage() {
   const [isConnected, setIsConnected] = useState(false);
   const pusherRef = useRef(null);
   const channelRef = useRef(null);
+  
+  // Create a unique client ID for this browser session
+  const [clientId] = useState(() => {
+    // Generate or retrieve a unique ID for this client
+    let id = localStorage.getItem('chat_client_id');
+    if (!id) {
+      id = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      localStorage.setItem('chat_client_id', id);
+    }
+    return id;
+  });
 
   // Load products for this stream
   useEffect(() => {
@@ -68,7 +79,8 @@ export default function ViewerstreamPage() {
       hasKey: !!pusherKey,
       keyPrefix: pusherKey ? pusherKey.substring(0, 8) : 'none',
       cluster: pusherCluster,
-      streamId: streamId
+      streamId: streamId,
+      clientId: clientId
     });
 
     // Check if credentials are available
@@ -122,9 +134,17 @@ export default function ViewerstreamPage() {
       const channel = pusher.subscribe(channelName);
       channelRef.current = channel;
 
-      // Bind to the 'new-message' event
+      // Bind to the 'new-message' event - FILTER OUT OWN MESSAGES
       channel.bind('new-message', (message) => {
-        console.log('📨 Received message:', message);
+        console.log('📨 Received message from Pusher:', message);
+        
+        // Don't add the message if it came from this client
+        if (message.clientId === clientId) {
+          console.log('🔇 Ignoring own message from Pusher (already displayed)');
+          return;
+        }
+        
+        console.log('✅ Adding message from another client:', message.text);
         setMessages((prev) => [...prev, message]);
       });
 
@@ -154,7 +174,7 @@ export default function ViewerstreamPage() {
         pusherRef.current.disconnect();
       }
     };
-  }, [streamId]);
+  }, [streamId, clientId]); // Add clientId to dependencies
 
   const handleChatSubmit = async (e) => {
     e.preventDefault();
@@ -175,19 +195,29 @@ export default function ViewerstreamPage() {
 
     const text = chatInput.trim();
     
+    // Create message with client ID to identify it came from this user
     const tempMessage = {
-      id: Date.now() + Math.random(),
+      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       author: "Viewer", 
       text: text,
       timestamp: new Date().toISOString(),
       streamId: streamId,
+      clientId: clientId, // Add client ID to identify this message
       isPending: true
     };
 
+    // Add to UI immediately (optimistic update)
     setMessages((prev) => [...prev, tempMessage]);
     setChatInput("");
 
     try {
+      console.log('📤 Sending message to API:', {
+        streamId: streamId,
+        text: text,
+        author: "Viewer",
+        clientId: clientId
+      });
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -197,17 +227,20 @@ export default function ViewerstreamPage() {
           streamId: streamId,
           text: text,
           author: "Viewer",
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          clientId: clientId // Send client ID to server
         })
       });
 
       if (!response.ok) {
-        throw new Error('Failed to send message');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to send message');
       }
 
       const data = await response.json();
       console.log('📤 Message sent successfully:', data);
       
+      // Update the pending message to confirmed
       setMessages((prev) => 
         prev.map(msg => 
           msg.id === tempMessage.id 
@@ -218,15 +251,15 @@ export default function ViewerstreamPage() {
       
     } catch (err) {
       console.error('Error sending message:', err);
-      setChatError("Failed to send message. Please try again.");
+      setChatError(`Failed to send message: ${err.message}`);
       
+      // Remove the failed message
       setMessages((prev) => 
         prev.filter(msg => msg.id !== tempMessage.id)
       );
     }
   };
 
-  // ... rest of your component JSX (keep the same as before)
   return (
     <div
       style={{
@@ -498,13 +531,14 @@ export default function ViewerstreamPage() {
                     padding: "0.25rem",
                     borderBottom: "1px solid #eee",
                     opacity: msg.isPending ? 0.6 : 1,
+                    backgroundColor: msg.clientId === clientId ? "#f0f9ff" : "transparent",
                   }}
                 >
                   <span
                     style={{
                       fontWeight: 600,
                       marginRight: "0.25rem",
-                      color: "#008060",
+                      color: msg.clientId === clientId ? "#008060" : "#666",
                     }}
                   >
                     {msg.author || "Viewer"}:

@@ -18,7 +18,8 @@ export async function action({ request }) {
     const body = await request.json();
     console.log('📝 Received message data:', body);
 
-    const { streamId, text, author, timestamp } = body;
+    // Add clientId to destructured fields
+    const { streamId, text, author, timestamp, clientId } = body;
 
     if (!streamId || !text) {
       return new Response(
@@ -73,15 +74,21 @@ export async function action({ request }) {
       useTLS: true
     });
 
+    // Create message with unique ID and include clientId
     const message = {
-      id: Date.now() + Math.random(),
+      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // More unique ID
       text: text,
       author: author || 'Viewer',
       timestamp: timestamp || new Date().toISOString(),
-      streamId: streamId
+      streamId: streamId,
+      clientId: clientId // Include clientId in the broadcast
     };
 
     console.log(`📤 Attempting to send to channel: stream-${streamId}`);
+    console.log('📤 Message payload:', {
+      ...message,
+      clientId: message.clientId // Show clientId in logs
+    });
 
     // Trigger with error catching
     try {
