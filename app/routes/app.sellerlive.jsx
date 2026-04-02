@@ -9,9 +9,7 @@ export const loader = async ({ request }) => {
   const shopDomain = session.shop;
 
   // Build iframe src using the shop domain
-  const iframeSrc = `https://liveselling-eta.vercel.app/sellerstream?shop=${encodeURIComponent(
-    shopDomain,
-  )}`;
+  const iframeSrc = `https://liveselling-eta.vercel.app/sellerstream?shop=burdauae.myshopify.com`;
 
   return { iframeSrc };
 };
@@ -60,7 +58,7 @@ export default function SellerLiveStream() {
             title="Seller Live stream"
             style={{
               width: "100%",
-              height: "800px",
+              height: "900px",
               border: "none",
             }}
           />
