@@ -1,188 +1,313 @@
-<!-- extensions/liveblocks/blocks/live_stream.liquid -->
+{% schema %}
+{
+  "name": "Live Stream Button",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Button Text",
+      "default": "Live Stream"
+    },
+    {
+      "type": "text",
+      "id": "stream_url",
+      "label": "Stream URL",
+      "info": "URL to your live stream page (e.g., /viewerstream?shop={{ shop.permanent_domain }}&streamId=YOUR_ID&ids=PRODUCT_IDS)"
+    },
+    {
+      "type": "text",
+      "id": "stream_id",
+      "label": "Stream ID",
+      "info": "The Stream ID to check if live"
+    },
+    {
+      "type": "select",
+      "id": "button_style",
+      "label": "Button Style",
+      "default": "primary",
+      "options": [
+        { "value": "primary", "label": "Primary" },
+        { "value": "secondary", "label": "Secondary" },
+        { "value": "outline", "label": "Outline" }
+      ]
+    },
+    {
+      "type": "checkbox",
+      "id": "show_live_indicator",
+      "label": "Show Live Indicator",
+      "default": true
+    },
+    {
+      "type": "color",
+      "id": "live_indicator_color",
+      "label": "Live Indicator Color",
+      "default": "#ff0000"
+    },
+    {
+      "type": "number",
+      "id": "check_interval",
+      "label": "Status Check Interval (seconds)",
+      "default": 30,
+      "info": "How often to check if stream is live"
+    }
+  ]
+}
+{% endschema %}
 
-<div class="live-stream-block" data-block-id="{{ block.id }}">
-  <div class="live-stream-container">
-    
-    <!-- Title -->
-    {% if block.settings.title != blank %}
-      <h2 class="live-stream-title">{{ block.settings.title }}</h2>
+<div class="live-stream-block" 
+     data-stream-id="{{ block.settings.stream_id }}" 
+     data-stream-url="{{ block.settings.stream_url }}"
+     data-check-interval="{{ block.settings.check_interval | default: 30 }}"
+     data-shop="{{ shop.permanent_domain }}">
+  
+  <button class="live-stream-button live-stream-button--{{ block.settings.button_style }}" data-live-status="loading">
+    <span class="live-stream-button-text">
+      {{ block.settings.button_text }}
+    </span>
+    {% if block.settings.show_live_indicator %}
+      <span class="live-stream-indicator"></span>
     {% endif %}
-    
-    <!-- Description -->
-    {% if block.settings.description != blank %}
-      <div class="live-stream-description">
-        {{ block.settings.description }}
-      </div>
-    {% endif %}
-    
-    <!-- Iframe for Vercel app -->
-    <div class="live-stream-iframe-wrapper">
-      {% assign base_url = block.settings.vercel_app_url | default: 'https://liveselling-eta.vercel.app' %}
-      {% assign shop_param = shop.permanent_domain | url_encode %}
-      {% assign full_url = base_url | append: '/sellerstream?shop=' | append: shop_param %}
-      
-      <iframe
-        id="sellerstream-iframe-{{ block.id }}"
-        class="live-stream-iframe"
-        src="{{ full_url }}"
-        width="100%"
-        height="{{ block.settings.iframe_height }}"
-        frameborder="0"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        allowfullscreen
-        loading="lazy"
-      ></iframe>
-    </div>
-    
-    <!-- Fallback message -->
-    <div id="iframe-fallback-{{ block.id }}" style="display: none;" class="live-stream-fallback">
-      <p>Unable to load live stream. Please refresh the page or try again later.</p>
-    </div>
-    
-  </div>
+  </button>
 </div>
 
 <style>
   .live-stream-block {
-    margin: 20px 0;
-    padding: 0;
-  }
-  
-  .live-stream-container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 20px;
-  }
-  
-  .live-stream-title {
-    font-size: 28px;
-    font-weight: bold;
-    margin-bottom: 15px;
+    margin: 10px 0;
     text-align: center;
   }
   
-  .live-stream-description {
+  .live-stream-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 24px;
     font-size: 16px;
-    line-height: 1.6;
-    margin-bottom: 25px;
-    text-align: center;
-    color: #666;
-  }
-  
-  .live-stream-iframe-wrapper {
-    position: relative;
-    width: 100%;
-    overflow: hidden;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  }
-  
-  .live-stream-iframe {
-    display: block;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s ease;
     border: none;
+    position: relative;
+    font-family: inherit;
+  }
+  
+  .live-stream-button--primary {
+    background-color: #000000;
+    color: white;
+  }
+  
+  .live-stream-button--primary:hover {
+    background-color: #333333;
+    transform: translateY(-2px);
+  }
+  
+  .live-stream-button--secondary {
+    background-color: transparent;
+    color: #000000;
+    border: 2px solid #000000;
+  }
+  
+  .live-stream-button--secondary:hover {
+    background-color: #000000;
+    color: white;
+  }
+  
+  .live-stream-button--outline {
+    background-color: transparent;
+    color: #000000;
+    border: 1px solid #cccccc;
+  }
+  
+  .live-stream-button--outline:hover {
+    border-color: #000000;
     background-color: #f5f5f5;
   }
   
-  .live-stream-fallback {
-    padding: 40px;
-    text-align: center;
-    background-color: #f8f8f8;
-    border-radius: 8px;
-    color: #666;
+  .live-stream-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #cccccc;
+    display: inline-block;
+    transition: all 0.3s ease;
   }
   
-  @media (max-width: 768px) {
-    .live-stream-container {
-      padding: 10px;
+  .live-stream-button.live .live-stream-indicator {
+    background-color: {{ block.settings.live_indicator_color }};
+    box-shadow: 0 0 8px {{ block.settings.live_indicator_color }};
+    animation: pulse 1.5s infinite;
+  }
+  
+  .live-stream-button.live .live-stream-button-text {
+    font-weight: bold;
+  }
+  
+  .live-stream-button.loading {
+    opacity: 0.7;
+    cursor: wait;
+  }
+  
+  .live-stream-button.loading .live-stream-indicator {
+    animation: pulse 1s infinite;
+  }
+  
+  @keyframes pulse {
+    0% {
+      transform: scale(0.95);
+      opacity: 1;
     }
-    
-    .live-stream-title {
-      font-size: 24px;
+    70% {
+      transform: scale(1.2);
+      opacity: 0.7;
     }
-    
-    .live-stream-description {
-      font-size: 14px;
+    100% {
+      transform: scale(0.95);
+      opacity: 1;
     }
+  }
+  
+  /* Optional: Add a tooltip for offline status */
+  .live-stream-button:not(.live):hover::after {
+    content: "Stream is offline";
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    margin-bottom: 8px;
+    pointer-events: none;
+    z-index: 1000;
   }
 </style>
 
 <script>
   (function() {
-    var iframe = document.getElementById('sellerstream-iframe-{{ block.id }}');
-    var fallback = document.getElementById('iframe-fallback-{{ block.id }}');
+    const block = document.querySelector('.live-stream-block');
+    if (!block) return;
     
-    if (iframe) {
-      console.log('Iframe src:', iframe.src);
+    const streamId = block.dataset.streamId;
+    const streamUrl = block.dataset.streamUrl;
+    const shop = block.dataset.shop;
+    const checkInterval = parseInt(block.dataset.checkInterval) || 30;
+    const button = block.querySelector('.live-stream-button');
+    const buttonText = block.querySelector('.live-stream-button-text');
+    const originalButtonText = buttonText.innerText;
+    
+    let currentLiveStatus = false;
+    let intervalId = null;
+    
+    // Function to update UI based on live status
+    function updateStreamStatus(isLive) {
+      currentLiveStatus = isLive;
       
-      iframe.onerror = function() {
-        console.error('Failed to load iframe');
-        iframe.style.display = 'none';
-        if (fallback) fallback.style.display = 'block';
-      };
+      if (isLive) {
+        // Stream is LIVE
+        button.classList.add('live');
+        button.classList.remove('loading');
+        buttonText.innerHTML = '🔴 LIVE Now! Watch Now →';
+        
+        // Make button clickable to open stream
+        if (streamUrl) {
+          button.onclick = (e) => {
+            e.preventDefault();
+            window.open(streamUrl, '_blank');
+          };
+        }
+      } else {
+        // Stream is offline
+        button.classList.remove('live');
+        button.classList.remove('loading');
+        buttonText.innerText = originalButtonText;
+        
+        // Optional: Show offline message on click
+        button.onclick = (e) => {
+          e.preventDefault();
+          if (!currentLiveStatus) {
+            // Show a temporary tooltip/message
+            const tooltip = document.createElement('div');
+            tooltip.textContent = 'Stream is currently offline';
+            tooltip.style.cssText = `
+              position: absolute;
+              bottom: 100%;
+              left: 50%;
+              transform: translateX(-50%);
+              background: rgba(0,0,0,0.8);
+              color: white;
+              padding: 5px 10px;
+              border-radius: 4px;
+              font-size: 12px;
+              white-space: nowrap;
+              margin-bottom: 5px;
+              pointer-events: none;
+              z-index: 1000;
+            `;
+            button.style.position = 'relative';
+            button.appendChild(tooltip);
+            setTimeout(() => tooltip.remove(), 2000);
+          }
+        };
+      }
+    }
+    
+    // Function to check stream status from your app's API
+    async function checkStreamStatus() {
+      if (!streamId || !shop) {
+        button.classList.remove('loading');
+        return;
+      }
       
-      iframe.onload = function() {
-        console.log('Iframe loaded successfully');
-      };
+      try {
+        // Call your app's API endpoint to check stream status
+        const response = await fetch(`/api/check-stream-status?streamId=${encodeURIComponent(streamId)}&shop=${encodeURIComponent(shop)}`);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        updateStreamStatus(data.isLive);
+        
+      } catch (error) {
+        console.error('Error checking stream status:', error);
+        // Don't show error to users, just keep current status
+        button.classList.remove('loading');
+      }
+    }
+    
+    // Start checking stream status
+    if (streamId && shop) {
+      // Check immediately
+      checkStreamStatus();
+      
+      // Set up periodic checking
+      if (checkInterval > 0) {
+        intervalId = setInterval(checkStreamStatus, checkInterval * 1000);
+      }
+    } else {
+      button.classList.remove('loading');
+      console.warn('Live Stream Block: Missing streamId or shop configuration');
+    }
+    
+    // Clean up interval when block is removed from DOM (optional)
+    // This is good practice but not strictly necessary for theme extensions
+    if (typeof MutationObserver !== 'undefined') {
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'childList' && !document.body.contains(block)) {
+            if (intervalId) {
+              clearInterval(intervalId);
+            }
+            observer.disconnect();
+          }
+        });
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
     }
   })();
 </script>
-
-{% schema %}
-{
-  "name": "Live Stream",
-  "target": "section",
-  "settings": [
-    {
-      "type": "text",
-      "id": "title",
-      "label": "Title",
-      "default": "Live Stream"
-    },
-    {
-      "type": "textarea",
-      "id": "description",
-      "label": "Description",
-      "default": "Join our live stream to see products in action and chat with our team!"
-    },
-    {
-      "type": "select",
-      "id": "iframe_height",
-      "label": "Iframe Height",
-      "options": [
-        {
-          "value": "400px",
-          "label": "400px"
-        },
-        {
-          "value": "500px",
-          "label": "500px"
-        },
-        {
-          "value": "600px",
-          "label": "600px"
-        },
-        {
-          "value": "700px",
-          "label": "700px"
-        },
-        {
-          "value": "80vh",
-          "label": "80% Viewport Height"
-        },
-        {
-          "value": "90vh",
-          "label": "90% Viewport Height"
-        }
-      ],
-      "default": "600px"
-    },
-    {
-      "type": "text",
-      "id": "vercel_app_url",
-      "label": "Vercel App URL",
-      "default": "https://liveselling-eta.vercel.app",
-      "info": "Your deployed Vercel app URL"
-    }
-  ]
-}
-{% endschema %}
