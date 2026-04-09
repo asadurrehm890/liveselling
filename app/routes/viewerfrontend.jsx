@@ -1,57 +1,89 @@
 // app/routes/viewerfrontend.jsx
 import { useLoaderData } from "react-router";
-import { boundary } from "@shopify/shopify-app-react-router/server";
+import prisma from "../db.server";
 
 /**
- * Loader runs on the server in the React Router template.
- * It calls your /api/viewerlink endpoint (same origin) to get
- * the current live session for this shop.
+ * Public loader for storefront / iframe use.
+ * Reads `shop` from the query string, looks up the LiveSession,
+ * and builds a public viewer URL.
  */
 export async function loader({ request }) {
-  // Call the internal API route
   const url = new URL(request.url);
-  const origin = url.origin; // e.g., https://your-tunnel-url
-  const res = await fetch(`${origin}/api/viewerlink`, {
-    headers: {
-      // Forward cookies for session auth (important)
-      cookie: request.headers.get("cookie") || "",
-    },
-  });
+  const shop = url.searchParams.get("shop");
 
-  if (!res.ok) {
-    const errorText = await res.text();
-    console.error("Error fetching /api/viewerlink:", errorText);
+  if (!shop) {
     return {
-      error: `Failed to load current live stream (${res.status})`,
+      error: "Missing 'shop' query parameter.",
       viewerLink: null,
     };
   }
 
-  const data = await res.json();
+  try {
+    // One row per shop (shop is @unique in Prisma)
+    const liveSession = await prisma.liveSession.findUnique({
+      where: { shop },
+    });
 
-  // If you deploy your viewer on a separate domain (e.g. Vercel),
-  // you can map the relative viewerUrl to full public URL here.
-  // Example:
-  const PUBLIC_VIEWER_BASE =
-    process.env.PUBLIC_VIEWER_BASE || "https://liveselling-eta.vercel.app";
+    if (!liveSession) {
+      return {
+        error: null,
+        viewerLink: null,
+      };
+    }
 
-  const fullViewerUrl =
-    data.viewerUrl.startsWith("http")
-      ? data.viewerUrl
-      : `${PUBLIC_VIEWER_BASE}${data.viewerUrl}`;
+    // Normalize productIds to array
+    let productIdsArray;
+    try {
+      const parsed = JSON.parse(liveSession.productIds);
+      if (Array.isArray(parsed)) {
+        productIdsArray = parsed;
+      } else {
+        productIdsArray = String(liveSession.productIds)
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      }
+    } catch {
+      productIdsArray = String(liveSession.productIds)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
 
-  return {
-    viewerLink: {
-      ...data,
-      fullViewerUrl,
-    },
-    error: null,
-  };
+    const idsParam = encodeURIComponent(productIdsArray.join(","));
+
+    // Base URL where viewerstream is hosted (your Vercel app)
+    const PUBLIC_VIEWER_BASE =
+      process.env.PUBLIC_VIEWER_BASE || "https://liveselling-eta.vercel.app";
+
+    const fullViewerUrl = `${PUBLIC_VIEWER_BASE}/viewerstream?shop=${encodeURIComponent(
+      liveSession.shop,
+    )}&streamId=${encodeURIComponent(
+      liveSession.streamId,
+    )}&ids=${idsParam}`;
+
+    return {
+      error: null,
+      viewerLink: {
+        shop: liveSession.shop,
+        streamId: liveSession.streamId,
+        productIds: productIdsArray,
+        updatedAt: liveSession.updatedAt,
+        fullViewerUrl,
+      },
+    };
+  } catch (err) {
+    console.error("Error loading LiveSession in viewerfrontend:", err);
+    return {
+      error: "Failed to load current live stream.",
+      viewerLink: null,
+    };
+  }
 }
 
 /**
- * Admin UI component that shows a button with the viewer URL
- * from api.viewerlink.jsx.
+ * Public UI component – plain HTML/CSS, no Polaris.
+ * Designed to be embedded in a storefront iframe.
  */
 export default function ViewerFrontendPage() {
   const { viewerLink, error } = useLoaderData();
@@ -73,110 +105,166 @@ export default function ViewerFrontendPage() {
   };
 
   return (
-    <s-page heading="Live Stream Viewer Link">
-      <s-card>
-        <s-text variant="headingMd" as="h2">
-          Current Live Stream
-        </s-text>
-        <s-divider />
+    <div
+      style={{
+        fontFamily:
+          "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        padding: "16px",
+        backgroundColor: "#ffffff",
+        color: "#111827",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: "480px",
+          margin: "0 auto",
+          border: "1px solid #e5e7eb",
+          borderRadius: "8px",
+          padding: "16px",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+        }}
+      >
+        <h2
+          style={{
+            fontSize: "18px",
+            fontWeight: 600,
+            marginBottom: "8px",
+            textAlign: "center",
+          }}
+        >
+          Live Stream
+        </h2>
 
         {error && (
-          <div style={{ marginTop: "16px" }}>
-            <s-text tone="critical">{error}</s-text>
-          </div>
+          <p
+            style={{
+              marginTop: "8px",
+              marginBottom: "0",
+              fontSize: "14px",
+              color: "#b91c1c",
+              textAlign: "center",
+            }}
+          >
+            {error}
+          </p>
         )}
 
         {!error && !viewerLink && (
-          <div style={{ marginTop: "16px" }}>
-            <s-text tone="subdued">
-              No active live stream found for this shop.
-            </s-text>
-          </div>
+          <p
+            style={{
+              marginTop: "8px",
+              marginBottom: "0",
+              fontSize: "14px",
+              color: "#6b7280",
+              textAlign: "center",
+            }}
+          >
+            No active live stream is currently available.
+          </p>
         )}
 
         {viewerLink && !error && (
-          <div style={{ marginTop: "16px" }}>
-            <div style={{ marginBottom: "12px" }}>
-              <s-text variant="bodyMd">
-                <strong>Shop:</strong> {viewerLink.shop}
-              </s-text>
-              <br />
-              <s-text variant="bodyMd">
-                <strong>Stream ID:</strong> {viewerLink.streamId}
-              </s-text>
-              <br />
-              <s-text variant="bodySm" tone="subdued">
-                Products: {viewerLink.productIds?.length || 0}
-              </s-text>
-              <br />
-              <s-text variant="bodySm" tone="subdued">
-                Last updated:{" "}
-                {viewerLink.updatedAt
-                  ? new Date(viewerLink.updatedAt).toLocaleString()
-                  : "Unknown"}
-              </s-text>
-            </div>
+          <div style={{ marginTop: "12px" }}>
+            <p
+              style={{
+                margin: "4px 0",
+                fontSize: "14px",
+                color: "#374151",
+              }}
+            >
+              <strong>Shop:</strong> {viewerLink.shop}
+            </p>
+            <p
+              style={{
+                margin: "4px 0",
+                fontSize: "14px",
+                color: "#374151",
+              }}
+            >
+              <strong>Stream ID:</strong> {viewerLink.streamId}
+            </p>
+            <p
+              style={{
+                margin: "4px 0",
+                fontSize: "12px",
+                color: "#6b7280",
+              }}
+            >
+              Products: {viewerLink.productIds?.length || 0}
+            </p>
+            <p
+              style={{
+                margin: "4px 0 12px",
+                fontSize: "12px",
+                color: "#6b7280",
+              }}
+            >
+              Last updated:{" "}
+              {viewerLink.updatedAt
+                ? new Date(viewerLink.updatedAt).toLocaleString()
+                : "Unknown"}
+            </p>
 
             <div
               style={{
-                padding: "8px 12px",
-                backgroundColor: "#f6f6f7",
-                borderRadius: "4px",
+                padding: "8px 10px",
+                backgroundColor: "#f9fafb",
+                borderRadius: "6px",
                 wordBreak: "break-all",
-                marginBottom: "16px",
+                marginBottom: "12px",
+                fontSize: "12px",
+                color: "#4b5563",
               }}
             >
-              <s-text variant="bodySm">
-                <strong>Viewer URL:</strong> {viewerLink.fullViewerUrl}
-              </s-text>
+              <strong>Viewer URL:</strong>
+              <br />
+              {viewerLink.fullViewerUrl}
             </div>
 
             <div
               style={{
                 display: "flex",
-                gap: "12px",
-                marginTop: "8px",
+                gap: "8px",
+                justifyContent: "center",
+                marginTop: "4px",
               }}
             >
-              <s-button variant="primary" onClick={openViewer}>
-                Open Live Viewer
-              </s-button>
-              <s-button variant="tertiary" onClick={copyViewerUrl}>
+              <button
+                type="button"
+                onClick={openViewer}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: "9999px",
+                  border: "none",
+                  backgroundColor: "#111827",
+                  color: "#ffffff",
+                  fontSize: "14px",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                Watch Live
+              </button>
+              <button
+                type="button"
+                onClick={copyViewerUrl}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: "9999px",
+                  border: "1px solid #d1d5db",
+                  backgroundColor: "#ffffff",
+                  color: "#374151",
+                  fontSize: "14px",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
                 Copy Link
-              </s-button>
+              </button>
             </div>
           </div>
         )}
-      </s-card>
-
-      <s-card>
-        <s-text variant="headingMd" as="h2">
-          How this works
-        </s-text>
-        <s-divider />
-        <div style={{ marginTop: "12px" }}>
-          <s-list>
-            <s-list-item>
-              Every time you click <strong>Start Live Stream</strong> in{" "}
-              <code>app.sellerlive.jsx</code>, the app updates a single{" "}
-              <code>LiveSession</code> row for your shop.
-            </s-list-item>
-            <s-list-item>
-              The <code>/api/viewerlink</code> endpoint returns the current{" "}
-              <strong>shop</strong>, <strong>streamId</strong>, and{" "}
-              <strong>product IDs</strong>, and builds the viewer URL.
-            </s-list-item>
-            <s-list-item>
-              This page calls <code>/api/viewerlink</code> and shows the
-              button that opens: <code>viewerstream?shop=&amp;streamId=&amp;ids=...</code>.
-            </s-list-item>
-          </s-list>
-        </div>
-      </s-card>
-    </s-page>
+      </div>
+    </div>
   );
 }
-
-export const headers = (headersArgs) => {
-  return boundary.headers(headersArgs);
-};

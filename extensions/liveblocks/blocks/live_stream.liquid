@@ -8,15 +8,18 @@
   {% content_for 'block', type: 'live_stream', id: 'live_stream' %}
 {% enddoc %}
 
-<div class="live-stream-embed-block" style="--live-stream-height: {{ block.settings.height }}px">
-  <iframe
-    src="https://liveselling-eta.vercel.app/viewerfrontend"
-    title="Live stream viewer"
-    loading="lazy"
-    allowfullscreen
-    referrerpolicy="no-referrer-when-downgrade"
-    class="live-stream-embed-iframe"
-  ></iframe>
+<div
+  class="live-stream-embed-block"
+  style="--live-stream-height: {{ block.settings.height }}px"
+>
+<iframe
+  src="https://liveselling-eta.vercel.app/viewerfrontend?shop={{ shop.permanent_domain }}"
+  title="Live stream viewer"
+  loading="lazy"
+  allowfullscreen
+  referrerpolicy="no-referrer-when-downgrade"
+  class="live-stream-embed-iframe"
+></iframe>
 </div>
 
 {% style %}
@@ -43,6 +46,7 @@
 {% schema %}
 {
   "name": "Live stream embed",
+  "target": "section",
   "settings": [
     {
       "type": "range",
