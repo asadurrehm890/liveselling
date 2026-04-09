@@ -18,7 +18,7 @@
     "graphql-codegen": "graphql-codegen",
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit",
-    "vercel-build": "prisma generate && prisma db push && npm run build"
+    "vercel-build": "prisma generate && prisma db push --force-reset && npm run build"
   },
   "type": "module",
   "engines": {
