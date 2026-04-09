@@ -54,40 +54,7 @@ export default function SellerLiveStream() {
   const [streamId, setStreamId] = useState("");
   const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [isStarting, setIsStarting] = useState(false);
-
   const [isClearing, setIsClearing] = useState(false);
-
-const clearLiveSessions = async () => {
-  if (!confirm("Are you sure you want to clear all live sessions?")) {
-    return;
-  }
-
-  setIsClearing(true);
-
-  try {
-    const response = await fetch("/api/clear-livesessions", {
-      method: "POST",
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      console.error("Failed to clear live sessions:", text);
-      shopify.toast.show("Failed to clear live sessions", { isError: true });
-      return;
-    }
-
-    const data = await response.json();
-    console.log("Cleared live sessions:", data);
-    shopify.toast.show(
-      `Cleared ${data.deletedCount ?? 0} live session record(s).`,
-    );
-  } catch (error) {
-    console.error("Error calling /api/clear-livesessions:", error);
-    shopify.toast.show("Error clearing live sessions", { isError: true });
-  } finally {
-    setIsClearing(false);
-  }
-};
 
   const toggleProduct = (productId) => {
     setSelectedProductIds((prev) =>
@@ -109,10 +76,7 @@ const clearLiveSessions = async () => {
     setStreamId(e.target.value);
   };
 
-  // New version: no "Save Stream" – only "Start Live Stream"
-  // When clicked, it:
-  // 1) Records the session in your Prisma DB via /api/live-sessions
-  // 2) Opens the viewer URL in a new tab
+  // Create or update the live session record, then open viewer
   const startLiveStream = async () => {
     if (!streamId.trim()) {
       shopify.toast.show("Please enter a Stream ID", { isError: true });
@@ -176,6 +140,47 @@ const clearLiveSessions = async () => {
     window.open(url, "_blank");
   };
 
+  // Clear all rows from LiveSession table via /api/clear-livesessions
+  const clearLiveSessions = async () => {
+    if (
+      !window.confirm(
+        "Are you sure you want to clear all live session records? This cannot be undone.",
+      )
+    ) {
+      return;
+    }
+
+    setIsClearing(true);
+
+    try {
+      const response = await fetch("/api/clear-livesessions", {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("Failed to clear live sessions:", text);
+        shopify.toast.show("Failed to clear live sessions", {
+          isError: true,
+        });
+        return;
+      }
+
+      const data = await response.json();
+      console.log("Cleared live sessions:", data);
+      shopify.toast.show(
+        `Cleared ${data.deletedCount ?? 0} live session record(s).`,
+      );
+    } catch (error) {
+      console.error("Error calling /api/clear-livesessions:", error);
+      shopify.toast.show("Error clearing live sessions", {
+        isError: true,
+      });
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   return (
     <s-page heading="Live Stream Manager">
       <s-button
@@ -187,16 +192,6 @@ const clearLiveSessions = async () => {
       >
         Start Live Stream
       </s-button>
-
-        <s-button
-    slot="primary-action"
-    variant="secondary"
-    tone="critical"
-    onClick={clearLiveSessions}
-    loading={isClearing}
-  >
-    Clear Live Sessions
-  </s-button>
 
       {/* Main Form */}
       <s-card>
@@ -381,6 +376,36 @@ const clearLiveSessions = async () => {
               Share the viewer URL with your customers
             </s-list-item>
           </s-list>
+        </div>
+      </s-card>
+
+      {/* Maintenance / Clear Live Sessions */}
+      <s-card>
+        <s-text variant="headingMd" as="h2">
+          Maintenance
+        </s-text>
+        <s-divider />
+        <div style={{ marginTop: "12px" }}>
+          <s-text variant="bodySm" tone="subdued">
+            Use this to clear all live session records from the database. This
+            cannot be undone.
+          </s-text>
+        </div>
+        <div
+          style={{
+            marginTop: "16px",
+            display: "flex",
+            justifyContent: "flex-end",
+          }}
+        >
+          <s-button
+            variant="tertiary"
+            tone="critical"
+            onClick={clearLiveSessions}
+            loading={isClearing}
+          >
+            Clear all live sessions
+          </s-button>
         </div>
       </s-card>
     </s-page>
