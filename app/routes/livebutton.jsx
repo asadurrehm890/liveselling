@@ -19,6 +19,7 @@ export default function LiveButtonPage() {
       background: "#f5f5f5",
       fontFamily: "Arial, sans-serif"
     }}>
+      
       <div style={{
         background: "white",
         padding: "40px",
