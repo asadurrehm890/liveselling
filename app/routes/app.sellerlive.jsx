@@ -55,6 +55,40 @@ export default function SellerLiveStream() {
   const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [isStarting, setIsStarting] = useState(false);
 
+  const [isClearing, setIsClearing] = useState(false);
+
+const clearLiveSessions = async () => {
+  if (!confirm("Are you sure you want to clear all live sessions?")) {
+    return;
+  }
+
+  setIsClearing(true);
+
+  try {
+    const response = await fetch("/api/clear-livesessions", {
+      method: "POST",
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("Failed to clear live sessions:", text);
+      shopify.toast.show("Failed to clear live sessions", { isError: true });
+      return;
+    }
+
+    const data = await response.json();
+    console.log("Cleared live sessions:", data);
+    shopify.toast.show(
+      `Cleared ${data.deletedCount ?? 0} live session record(s).`,
+    );
+  } catch (error) {
+    console.error("Error calling /api/clear-livesessions:", error);
+    shopify.toast.show("Error clearing live sessions", { isError: true });
+  } finally {
+    setIsClearing(false);
+  }
+};
+
   const toggleProduct = (productId) => {
     setSelectedProductIds((prev) =>
       prev.includes(productId)
@@ -153,6 +187,16 @@ export default function SellerLiveStream() {
       >
         Start Live Stream
       </s-button>
+
+        <s-button
+    slot="primary-action"
+    variant="secondary"
+    tone="critical"
+    onClick={clearLiveSessions}
+    loading={isClearing}
+  >
+    Clear Live Sessions
+  </s-button>
 
       {/* Main Form */}
       <s-card>
