@@ -36,3 +36,17 @@ model Session {
   @@index([isOnline])
   @@index([expires])  // For cleaning up expired sessions
 }
+
+
+// prisma/schema.prisma
+
+model LiveSession {
+  id         Int      @id @default(autoincrement())
+  shop       String
+  streamId   String
+  productIds String   // store as JSON string or CSV
+  createdAt  DateTime @default(now())
+
+  @@index([shop])
+  @@index([streamId])
+}

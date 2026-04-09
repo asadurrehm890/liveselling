@@ -156,18 +156,53 @@ export default function SellerLiveStream() {
     }
   };
   
-  const startLiveStream = () => {
-    if (!streamId || selectedProductIds.length === 0) {
-      shopify.toast.show("Please enter Stream ID and select products", { isError: true });
-      return;
+ const startLiveStream = async () => {
+  if (!streamId || selectedProductIds.length === 0) {
+    shopify.toast.show("Please enter Stream ID and select products", { isError: true });
+    return;
+  }
+
+  const idsParam = selectedProductIds.join(",");
+
+  try {
+    // 1) Save session to DB
+    const response = await fetch("/api/live-sessions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        // shop is also available on the server via authenticate.admin,
+        // but sending it here can be convenient for logging or validation
+        shop,
+        streamId,
+        productIds: selectedProductIds,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("Failed to create live session:", await response.text());
+      shopify.toast.show("Could not record live session (but stream will still open).", {
+        isError: true,
+      });
     }
-    
-    const idsParam = selectedProductIds.join(",");
-    const url = `/viewerstream?shop=${encodeURIComponent(shop)}&streamId=${encodeURIComponent(streamId)}&ids=${encodeURIComponent(idsParam)}`;
-    
-    console.log("Opening URL:", url);
-    window.open(url, "_blank");
-  };
+  } catch (error) {
+    console.error("Error calling /api/live-sessions:", error);
+    shopify.toast.show("Error recording live session (but stream will still open).", {
+      isError: true,
+    });
+  }
+
+  // 2) Open viewer regardless of DB result
+  const url = `/viewerstream?shop=${encodeURIComponent(
+    shop,
+  )}&streamId=${encodeURIComponent(streamId)}&ids=${encodeURIComponent(
+    idsParam,
+  )}`;
+
+  console.log("Opening URL:", url);
+  window.open(url, "_blank");
+};
   
   const loadSavedStream = (stream) => {
     setStreamId(stream.streamId);
