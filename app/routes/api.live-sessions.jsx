@@ -3,7 +3,6 @@ import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 
 export async function action({ request }) {
-  // Enforce POST-only for this endpoint
   if (request.method !== "POST") {
     return new Response(
       JSON.stringify({ error: "Method not allowed" }),
@@ -14,7 +13,7 @@ export async function action({ request }) {
     );
   }
 
-  // Get the authenticated shop from Shopify session
+  // Get the authenticated shop
   const { session } = await authenticate.admin(request);
   const shopFromSession = session.shop;
 
@@ -52,31 +51,35 @@ export async function action({ request }) {
   }
 
   try {
-    // productIds can be an array or a string; normalize to string for storage
     const productIdsToStore =
       typeof productIds === "string"
         ? productIds
         : JSON.stringify(productIds);
 
-    const record = await prisma.liveSession.create({
-      data: {
-        shop: shopFromSession, // trust shop from session, not client
+    // One row per shop: use upsert
+    const record = await prisma.liveSession.upsert({
+      where: {
+        shop: shopFromSession,  // UNIQUE field
+      },
+      update: {
+        streamId,
+        productIds: productIdsToStore,
+      },
+      create: {
+        shop: shopFromSession,
         streamId,
         productIds: productIdsToStore,
       },
     });
 
-    return new Response(
-      JSON.stringify({ ok: true, session: record }),
-      {
-        status: 201,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
+    return new Response(JSON.stringify({ ok: true, session: record }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (error) {
-    console.error("Error creating live session:", error);
+    console.error("Error upserting live session:", error);
     return new Response(
-      JSON.stringify({ error: "Failed to create live session" }),
+      JSON.stringify({ error: "Failed to save live session" }),
       {
         status: 500,
         headers: { "Content-Type": "application/json" },

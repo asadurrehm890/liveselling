@@ -1,313 +1,58 @@
+{% doc %}
+  Renders an embedded live stream frontend inside an iframe.
+
+  The iframe points to the external viewer frontend URL that shows
+  the current live stream link for the shop.
+
+  @example
+  {% content_for 'block', type: 'live_stream', id: 'live_stream' %}
+{% enddoc %}
+
+<div class="live-stream-embed-block" style="--live-stream-height: {{ block.settings.height }}px">
+  <iframe
+    src="https://liveselling-eta.vercel.app/viewerfrontend"
+    title="Live stream viewer"
+    loading="lazy"
+    allowfullscreen
+    referrerpolicy="no-referrer-when-downgrade"
+    class="live-stream-embed-iframe"
+  ></iframe>
+</div>
+
+{% style %}
+  .live-stream-embed-block {
+    margin: 10px 0;
+    width: 100%;
+  }
+
+  .live-stream-embed-iframe {
+    width: 100%;
+    min-height: var(--live-stream-height, 600px);
+    border: none;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  @media (max-width: 749px) {
+    .live-stream-embed-iframe {
+      min-height: calc(var(--live-stream-height, 600px) - 100px);
+    }
+  }
+{% endstyle %}
+
 {% schema %}
 {
-  "name": "Live Stream Button",
-  "target": "section",
+  "name": "Live stream embed",
   "settings": [
     {
-      "type": "text",
-      "id": "button_text",
-      "label": "Button Text",
-      "default": "Live Stream"
-    },
-    {
-      "type": "text",
-      "id": "stream_url",
-      "label": "Stream URL",
-      "info": "URL to your live stream page (e.g., /viewerstream?shop={{ shop.permanent_domain }}&streamId=YOUR_ID&ids=PRODUCT_IDS)"
-    },
-    {
-      "type": "text",
-      "id": "stream_id",
-      "label": "Stream ID",
-      "info": "The Stream ID to check if live"
-    },
-    {
-      "type": "select",
-      "id": "button_style",
-      "label": "Button Style",
-      "default": "primary",
-      "options": [
-        { "value": "primary", "label": "Primary" },
-        { "value": "secondary", "label": "Secondary" },
-        { "value": "outline", "label": "Outline" }
-      ]
-    },
-    {
-      "type": "checkbox",
-      "id": "show_live_indicator",
-      "label": "Show Live Indicator",
-      "default": true
-    },
-    {
-      "type": "color",
-      "id": "live_indicator_color",
-      "label": "Live Indicator Color",
-      "default": "#ff0000"
-    },
-    {
-      "type": "number",
-      "id": "check_interval",
-      "label": "Status Check Interval (seconds)",
-      "default": 30,
-      "info": "How often to check if stream is live"
+      "type": "range",
+      "id": "height",
+      "label": "Iframe height (px)",
+      "min": 400,
+      "max": 1200,
+      "step": 50,
+      "default": 600
     }
   ]
 }
 {% endschema %}
-
-<div class="live-stream-block" 
-     data-stream-id="{{ block.settings.stream_id }}" 
-     data-stream-url="{{ block.settings.stream_url }}"
-     data-check-interval="{{ block.settings.check_interval | default: 30 }}"
-     data-shop="{{ shop.permanent_domain }}">
-  
-  <button class="live-stream-button live-stream-button--{{ block.settings.button_style }}" data-live-status="loading">
-    <span class="live-stream-button-text">
-      {{ block.settings.button_text }}
-    </span>
-    {% if block.settings.show_live_indicator %}
-      <span class="live-stream-indicator"></span>
-    {% endif %}
-  </button>
-</div>
-
-<style>
-  .live-stream-block {
-    margin: 10px 0;
-    text-align: center;
-  }
-  
-  .live-stream-button {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 24px;
-    font-size: 16px;
-    font-weight: 600;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    border: none;
-    position: relative;
-    font-family: inherit;
-  }
-  
-  .live-stream-button--primary {
-    background-color: #000000;
-    color: white;
-  }
-  
-  .live-stream-button--primary:hover {
-    background-color: #333333;
-    transform: translateY(-2px);
-  }
-  
-  .live-stream-button--secondary {
-    background-color: transparent;
-    color: #000000;
-    border: 2px solid #000000;
-  }
-  
-  .live-stream-button--secondary:hover {
-    background-color: #000000;
-    color: white;
-  }
-  
-  .live-stream-button--outline {
-    background-color: transparent;
-    color: #000000;
-    border: 1px solid #cccccc;
-  }
-  
-  .live-stream-button--outline:hover {
-    border-color: #000000;
-    background-color: #f5f5f5;
-  }
-  
-  .live-stream-indicator {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background-color: #cccccc;
-    display: inline-block;
-    transition: all 0.3s ease;
-  }
-  
-  .live-stream-button.live .live-stream-indicator {
-    background-color: {{ block.settings.live_indicator_color }};
-    box-shadow: 0 0 8px {{ block.settings.live_indicator_color }};
-    animation: pulse 1.5s infinite;
-  }
-  
-  .live-stream-button.live .live-stream-button-text {
-    font-weight: bold;
-  }
-  
-  .live-stream-button.loading {
-    opacity: 0.7;
-    cursor: wait;
-  }
-  
-  .live-stream-button.loading .live-stream-indicator {
-    animation: pulse 1s infinite;
-  }
-  
-  @keyframes pulse {
-    0% {
-      transform: scale(0.95);
-      opacity: 1;
-    }
-    70% {
-      transform: scale(1.2);
-      opacity: 0.7;
-    }
-    100% {
-      transform: scale(0.95);
-      opacity: 1;
-    }
-  }
-  
-  /* Optional: Add a tooltip for offline status */
-  .live-stream-button:not(.live):hover::after {
-    content: "Stream is offline";
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0,0,0,0.8);
-    color: white;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    white-space: nowrap;
-    margin-bottom: 8px;
-    pointer-events: none;
-    z-index: 1000;
-  }
-</style>
-
-<script>
-  (function() {
-    const block = document.querySelector('.live-stream-block');
-    if (!block) return;
-    
-    const streamId = block.dataset.streamId;
-    const streamUrl = block.dataset.streamUrl;
-    const shop = block.dataset.shop;
-    const checkInterval = parseInt(block.dataset.checkInterval) || 30;
-    const button = block.querySelector('.live-stream-button');
-    const buttonText = block.querySelector('.live-stream-button-text');
-    const originalButtonText = buttonText.innerText;
-    
-    let currentLiveStatus = false;
-    let intervalId = null;
-    
-    // Function to update UI based on live status
-    function updateStreamStatus(isLive) {
-      currentLiveStatus = isLive;
-      
-      if (isLive) {
-        // Stream is LIVE
-        button.classList.add('live');
-        button.classList.remove('loading');
-        buttonText.innerHTML = '🔴 LIVE Now! Watch Now →';
-        
-        // Make button clickable to open stream
-        if (streamUrl) {
-          button.onclick = (e) => {
-            e.preventDefault();
-            window.open(streamUrl, '_blank');
-          };
-        }
-      } else {
-        // Stream is offline
-        button.classList.remove('live');
-        button.classList.remove('loading');
-        buttonText.innerText = originalButtonText;
-        
-        // Optional: Show offline message on click
-        button.onclick = (e) => {
-          e.preventDefault();
-          if (!currentLiveStatus) {
-            // Show a temporary tooltip/message
-            const tooltip = document.createElement('div');
-            tooltip.textContent = 'Stream is currently offline';
-            tooltip.style.cssText = `
-              position: absolute;
-              bottom: 100%;
-              left: 50%;
-              transform: translateX(-50%);
-              background: rgba(0,0,0,0.8);
-              color: white;
-              padding: 5px 10px;
-              border-radius: 4px;
-              font-size: 12px;
-              white-space: nowrap;
-              margin-bottom: 5px;
-              pointer-events: none;
-              z-index: 1000;
-            `;
-            button.style.position = 'relative';
-            button.appendChild(tooltip);
-            setTimeout(() => tooltip.remove(), 2000);
-          }
-        };
-      }
-    }
-    
-    // Function to check stream status from your app's API
-    async function checkStreamStatus() {
-      if (!streamId || !shop) {
-        button.classList.remove('loading');
-        return;
-      }
-      
-      try {
-        // Call your app's API endpoint to check stream status
-        const response = await fetch(`/api/check-stream-status?streamId=${encodeURIComponent(streamId)}&shop=${encodeURIComponent(shop)}`);
-        
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        
-        const data = await response.json();
-        updateStreamStatus(data.isLive);
-        
-      } catch (error) {
-        console.error('Error checking stream status:', error);
-        // Don't show error to users, just keep current status
-        button.classList.remove('loading');
-      }
-    }
-    
-    // Start checking stream status
-    if (streamId && shop) {
-      // Check immediately
-      checkStreamStatus();
-      
-      // Set up periodic checking
-      if (checkInterval > 0) {
-        intervalId = setInterval(checkStreamStatus, checkInterval * 1000);
-      }
-    } else {
-      button.classList.remove('loading');
-      console.warn('Live Stream Block: Missing streamId or shop configuration');
-    }
-    
-    // Clean up interval when block is removed from DOM (optional)
-    // This is good practice but not strictly necessary for theme extensions
-    if (typeof MutationObserver !== 'undefined') {
-      const observer = new MutationObserver((mutations) => {
-        mutations.forEach((mutation) => {
-          if (mutation.type === 'childList' && !document.body.contains(block)) {
-            if (intervalId) {
-              clearInterval(intervalId);
-            }
-            observer.disconnect();
-          }
-        });
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
-    }
-  })();
-</script>

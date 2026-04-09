@@ -42,11 +42,8 @@ model Session {
 
 model LiveSession {
   id         Int      @id @default(autoincrement())
-  shop       String
+  shop       String   @unique   // only one row per shop
   streamId   String
-  productIds String   // store as JSON string or CSV
-  createdAt  DateTime @default(now())
-
-  @@index([shop])
-  @@index([streamId])
+  productIds String   // JSON string or CSV
+  updatedAt  DateTime @updatedAt
 }
