@@ -26,6 +26,8 @@ export async function action({ request }) {
 
     // Get unauthenticated Storefront client for this shop
     // Requires storefront config + token in shopify.server.js
+
+    shop="burdauae.myshopify.com";
     const { storefront } = await unauthenticated.storefront(shop);
 
     // Ensure merchandiseId is a ProductVariant GID
