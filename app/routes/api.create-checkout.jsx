@@ -25,7 +25,7 @@ export async function action({ request }) {
     }
 
     // Get unauthenticated Storefront client for this shop
-    // See: https://shopify.dev/docs/api/shopify-app-react-router/latest/unauthenticated/unauthenticated-storefront
+    // Requires storefront config + token in shopify.server.js
     const { storefront } = await unauthenticated.storefront(shop);
 
     // Ensure merchandiseId is a ProductVariant GID
@@ -45,13 +45,7 @@ export async function action({ request }) {
 
     console.log("Lines sent to cartCreate:", lines);
 
-    // VALIDATED Storefront mutation:
-    // mutation CartCreateForVariants($cartInput: CartInput) {
-    //   cartCreate(input: $cartInput) {
-    //     cart { id checkoutUrl ... }
-    //     userErrors { field message }
-    //   }
-    // }
+    // VALIDATED Storefront mutation (against Storefront schema)
     const mutation = `#graphql
       mutation CartCreateForVariants($cartInput: CartInput) {
         cartCreate(input: $cartInput) {
@@ -87,14 +81,14 @@ export async function action({ request }) {
     };
 
     const response = await storefront.graphql(mutation, { variables });
-
     const responseJson = await response.json();
+
     console.log(
       "Storefront cartCreate response JSON:",
       JSON.stringify(responseJson, null, 2),
     );
 
-    // Handle GraphQL-level errors
+    // Handle top-level GraphQL errors
     if (responseJson.errors && responseJson.errors.length > 0) {
       console.error("GraphQL errors:", responseJson.errors);
       return new Response(
@@ -145,7 +139,7 @@ export async function action({ request }) {
   } catch (error) {
     console.error("Checkout (cart) creation error (Storefront):", error);
 
-    // If the error is a Response-like object
+    // Handle Response-like errors (e.g., internal fetch errors)
     if (
       error &&
       typeof error.status === "number" &&
