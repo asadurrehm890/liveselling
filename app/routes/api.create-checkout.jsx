@@ -3,14 +3,14 @@ import { authenticate } from "../shopify.server";
 
 export async function action({ request }) {
   try {
-    // Use public.appProxy for app proxy / public routes
-    const { storefront } = await authenticate.public.appProxy(request);
+    // Use Admin context for REST Admin API
+    const { admin, session } = await authenticate.admin(request);
 
     const body = await request.json();
     const { shop, lineItems } = body;
 
-    console.log("Creating checkout (cart) for shop:", shop);
-    console.log("Raw line items payload:", lineItems);
+    console.log("Creating checkout via Admin REST for shop:", shop);
+    console.log("Line items payload:", lineItems);
 
     if (!shop || !lineItems || lineItems.length === 0) {
       return new Response(
@@ -21,91 +21,30 @@ export async function action({ request }) {
       );
     }
 
-    // Ensure merchandiseId is a ProductVariant GID
-    const lines = lineItems.map((item) => {
-      let merchandiseId = item.variantId;
+    // Build the Checkout using Admin REST resources
+    const checkout = new admin.rest.resources.Checkout({ session });
 
-      // If it's a plain numeric ID (e.g. "45443281748012"), convert to GID
-      if (typeof merchandiseId === "string" && !merchandiseId.startsWith("gid://")) {
-        merchandiseId = `gid://shopify/ProductVariant/${merchandiseId}`;
-      }
+    checkout.line_items = lineItems.map((item) => ({
+      // REST Checkout expects a numeric variant_id
+      variant_id: Number(item.variantId),
+      quantity: item.quantity,
+    }));
 
-      return {
-        quantity: item.quantity,
-        merchandiseId,
-      };
+    console.log("Checkout line_items to send:", checkout.line_items);
+
+    // Save the checkout (Admin REST call)
+    await checkout.save({ update: true });
+
+    console.log("Checkout created:", {
+      id: checkout.id,
+      checkout_url: checkout.checkout_url,
     });
 
-    console.log("Lines sent to cartCreate:", lines);
-
-    const mutation = `#graphql
-      mutation CartCreateForVariants($cartInput: CartInput) {
-        cartCreate(input: $cartInput) {
-          cart {
-            id
-            checkoutUrl
-            lines(first: 10) {
-              edges {
-                node {
-                  quantity
-                  merchandise {
-                    ... on ProductVariant {
-                      id
-                      title
-                    }
-                  }
-                }
-              }
-            }
-          }
-          userErrors {
-            field
-            message
-          }
-        }
-      }
-    `;
-
-    const variables = {
-      cartInput: {
-        lines,
-      },
-    };
-
-    const response = await storefront.graphql(mutation, {
-      variables,
-    });
-
-    const responseJson = await response.json();
-    console.log(
-      "Storefront cartCreate response JSON:",
-      JSON.stringify(responseJson, null, 2),
-    );
-
-    const result = responseJson.data?.cartCreate;
-    const userErrors = result?.userErrors || [];
-
-    if (userErrors.length > 0) {
-      const message =
-        userErrors
-          .map((e) => `${e.field?.join(".") ?? ""}: ${e.message}`)
-          .join("; ") || "Cart creation failed due to userErrors";
-
-      console.error("cartCreate userErrors:", userErrors);
-
-      return new Response(
-        JSON.stringify({ error: message, userErrors }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
-    }
-
-    const checkoutUrl = result?.cart?.checkoutUrl;
-
-    if (!checkoutUrl) {
-      console.error("No checkoutUrl returned from cartCreate");
+    if (!checkout.checkout_url) {
+      console.error("No checkout_url returned from Admin REST Checkout");
       return new Response(
         JSON.stringify({
-          error: "No checkout URL returned from Shopify",
+          error: "No checkout URL returned from Shopify Admin API",
         }),
         { status: 500, headers: { "Content-Type": "application/json" } },
       );
@@ -114,45 +53,39 @@ export async function action({ request }) {
     return new Response(
       JSON.stringify({
         success: true,
-        checkoutUrl,
+        checkoutUrl: checkout.checkout_url,
       }),
       { headers: { "Content-Type": "application/json" } },
     );
   } catch (error) {
-    // Better error logging for different error shapes
-    console.error("Checkout (cart) creation error (raw):", error);
+    console.error("Checkout creation error (Admin REST):", error);
 
-    // If the error is a Response (e.g., fetch or GraphQL client threw it)
-    if (error instanceof Response) {
-      let bodyText = "";
+    // If the Admin REST SDK wraps an HTTP error, it may have a response property
+    if (error?.response) {
       try {
-        bodyText = await error.text();
-      } catch (e) {
-        bodyText = "<unable to read body>";
+        const errorBody = await error.response.json();
+        console.error(
+          "Admin REST error status:",
+          error.response.status,
+          "body:",
+          JSON.stringify(errorBody, null, 2),
+        );
+
+        return new Response(
+          JSON.stringify({
+            error: "Failed to create checkout",
+            status: error.response.status,
+            responseBody: errorBody,
+          }),
+          { status: 500, headers: { "Content-Type": "application/json" } },
+        );
+      } catch (parseError) {
+        console.error("Failed to parse Admin REST error body:", parseError);
       }
-
-      console.error("Error Response status:", error.status);
-      console.error("Error Response body:", bodyText);
-
-      return new Response(
-        JSON.stringify({
-          error: "Failed to create checkout",
-          status: error.status,
-          responseBody: bodyText,
-        }),
-        { status: 500, headers: { "Content-Type": "application/json" } },
-      );
     }
 
-    // Generic fallback for other error types
+    // Fallback for generic error
     const message = error?.message || "Failed to create checkout";
-    console.error("Error message:", message);
-
-    // If the error has a 'body' property (e.g. GraphqlQueryError)
-    if (error?.body) {
-      console.error("Error body:", JSON.stringify(error.body, null, 2));
-    }
-
     return new Response(
       JSON.stringify({
         error: message,
