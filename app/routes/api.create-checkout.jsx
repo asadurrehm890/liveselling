@@ -3,14 +3,14 @@ import { authenticate } from "../shopify.server";
 
 export async function action({ request }) {
   try {
-    // For an app proxy or “public” request, use public.appProxy
-    const { storefront, session } = await authenticate.public.appProxy(request);
+    // Use public.appProxy for app proxy / public routes
+    const { storefront } = await authenticate.public.appProxy(request);
 
     const body = await request.json();
     const { shop, lineItems } = body;
 
     console.log("Creating checkout (cart) for shop:", shop);
-    console.log("Line items:", lineItems);
+    console.log("Raw line items payload:", lineItems);
 
     if (!shop || !lineItems || lineItems.length === 0) {
       return new Response(
@@ -21,7 +21,23 @@ export async function action({ request }) {
       );
     }
 
-    // Storefront Cart API mutation (recommended instead of checkoutCreate)
+    // Ensure merchandiseId is a ProductVariant GID
+    const lines = lineItems.map((item) => {
+      let merchandiseId = item.variantId;
+
+      // If it's a plain numeric ID (e.g. "45443281748012"), convert to GID
+      if (typeof merchandiseId === "string" && !merchandiseId.startsWith("gid://")) {
+        merchandiseId = `gid://shopify/ProductVariant/${merchandiseId}`;
+      }
+
+      return {
+        quantity: item.quantity,
+        merchandiseId,
+      };
+    });
+
+    console.log("Lines sent to cartCreate:", lines);
+
     const mutation = `#graphql
       mutation CartCreateForVariants($cartInput: CartInput) {
         cartCreate(input: $cartInput) {
@@ -52,11 +68,7 @@ export async function action({ request }) {
 
     const variables = {
       cartInput: {
-        lines: lineItems.map((item) => ({
-          quantity: item.quantity,
-          merchandiseId: item.variantId, // must be a ProductVariant GID
-        })),
-        // Optional: buyerIdentity, attributes, discounts, etc.
+        lines,
       },
     };
 
@@ -66,7 +78,7 @@ export async function action({ request }) {
 
     const responseJson = await response.json();
     console.log(
-      "Storefront cartCreate response:",
+      "Storefront cartCreate response JSON:",
       JSON.stringify(responseJson, null, 2),
     );
 
@@ -75,9 +87,9 @@ export async function action({ request }) {
 
     if (userErrors.length > 0) {
       const message =
-        userErrors.map((e) => `${e.field?.join(".") ?? ""}: ${e.message}`).join(
-          "; ",
-        ) || "Cart creation failed due to userErrors";
+        userErrors
+          .map((e) => `${e.field?.join(".") ?? ""}: ${e.message}`)
+          .join("; ") || "Cart creation failed due to userErrors";
 
       console.error("cartCreate userErrors:", userErrors);
 
@@ -107,11 +119,43 @@ export async function action({ request }) {
       { headers: { "Content-Type": "application/json" } },
     );
   } catch (error) {
-    console.error("Checkout (cart) creation error:", error);
+    // Better error logging for different error shapes
+    console.error("Checkout (cart) creation error (raw):", error);
+
+    // If the error is a Response (e.g., fetch or GraphQL client threw it)
+    if (error instanceof Response) {
+      let bodyText = "";
+      try {
+        bodyText = await error.text();
+      } catch (e) {
+        bodyText = "<unable to read body>";
+      }
+
+      console.error("Error Response status:", error.status);
+      console.error("Error Response body:", bodyText);
+
+      return new Response(
+        JSON.stringify({
+          error: "Failed to create checkout",
+          status: error.status,
+          responseBody: bodyText,
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Generic fallback for other error types
+    const message = error?.message || "Failed to create checkout";
+    console.error("Error message:", message);
+
+    // If the error has a 'body' property (e.g. GraphqlQueryError)
+    if (error?.body) {
+      console.error("Error body:", JSON.stringify(error.body, null, 2));
+    }
 
     return new Response(
       JSON.stringify({
-        error: error.message || "Failed to create checkout",
+        error: message,
         details: error.toString(),
       }),
       { status: 500, headers: { "Content-Type": "application/json" } },
