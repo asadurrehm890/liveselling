@@ -1,16 +1,18 @@
 {% comment %}
   Live Stream Status Button
   Shows different button states based on live stream availability
-  - Shows "LIVE" with red dot when stream is active
-  - Shows "Not Live" with gray dot when no stream is active
+  - Shows "LIVE" with red dot when stream is active (clickable)
+  - Shows "Not Live" with gray dot when no stream is active (disabled)
+  - Redirects to viewerstream URL when clicked
 {% endcomment %}
 
 <div 
   id="live-status-button-{{ block.id }}"
-  class="live-status-button-container"
+  class="live-status-button-wrapper"
   data-shop="{{ shop.permanent_domain }}"
   data-api-url="https://liveselling-eta.vercel.app"
   data-check-interval="30000"
+  style="display: inline-block;"
 >
   <button 
     id="live-status-btn-{{ block.id }}"
@@ -37,18 +39,18 @@
     const textSpan = button.querySelector('.live-status-text');
     
     let checkInterval = null;
-    let currentStreamUrl = null;
+    let currentViewerUrl = null;
     let isActive = false;
     
     // Update button UI based on status
-    function updateButtonUI(status, streamUrl = null) {
+    function updateButtonUI(status, viewerUrl = null) {
       if (status === 'live') {
         // Live stream active
         button.className = 'live-status-btn live-status-active';
         dotSpan.className = 'live-status-dot live-dot-active';
         textSpan.textContent = 'LIVE';
         button.disabled = false;
-        currentStreamUrl = streamUrl;
+        currentViewerUrl = viewerUrl;
         isActive = true;
       } else if (status === 'not-live') {
         // No live stream
@@ -56,7 +58,7 @@
         dotSpan.className = 'live-status-dot live-dot-inactive';
         textSpan.textContent = 'Not Live';
         button.disabled = true;
-        currentStreamUrl = null;
+        currentViewerUrl = null;
         isActive = false;
       } else if (status === 'checking') {
         // Checking status
@@ -64,7 +66,7 @@
         dotSpan.className = 'live-status-dot live-dot-checking';
         textSpan.textContent = 'Checking...';
         button.disabled = true;
-        currentStreamUrl = null;
+        currentViewerUrl = null;
         isActive = false;
       } else if (status === 'error') {
         // Error occurred
@@ -72,7 +74,7 @@
         dotSpan.className = 'live-status-dot live-dot-error';
         textSpan.textContent = 'Error';
         button.disabled = true;
-        currentStreamUrl = null;
+        currentViewerUrl = null;
         isActive = false;
       }
     }
@@ -86,7 +88,7 @@
         const result = await response.json();
         
         if (result.success && result.data) {
-          // Live stream is active
+          // Live stream is active - use the fullViewerUrl from API
           updateButtonUI('live', result.data.fullViewerUrl);
         } else {
           // No active live stream
@@ -98,11 +100,18 @@
       }
     }
     
-    // Handle button click - open live stream if active
+    // Handle button click - redirect to viewerstream
     function handleButtonClick(e) {
       e.preventDefault();
-      if (isActive && currentStreamUrl) {
-        window.open(currentStreamUrl, '_blank');
+      if (isActive && currentViewerUrl) {
+        // Open in current tab or new tab? Let's make it configurable
+        const openInNewTab = true; // Set to false to open in same tab
+        
+        if (openInNewTab) {
+          window.open(currentViewerUrl, '_blank');
+        } else {
+          window.location.href = currentViewerUrl;
+        }
       }
     }
     
@@ -311,43 +320,16 @@
     },
     {
       "type": "checkbox",
+      "id": "open_new_tab",
+      "label": "Open in new tab",
+      "default": true,
+      "info": "When checked, opens viewer in new tab. When unchecked, opens in same tab."
+    },
+    {
+      "type": "checkbox",
       "id": "show_on_mobile",
       "label": "Show on mobile devices",
       "default": true
-    },
-    {
-      "type": "header",
-      "content": "Colors"
-    },
-    {
-      "type": "color",
-      "id": "live_color",
-      "label": "Live Button Color",
-      "default": "#dc2626"
-    },
-    {
-      "type": "color",
-      "id": "inactive_color",
-      "label": "Inactive Button Color",
-      "default": "#6b7280"
-    },
-    {
-      "type": "header",
-      "content": "Text"
-    },
-    {
-      "type": "text",
-      "id": "live_text",
-      "label": "Live Stream Text",
-      "default": "LIVE",
-      "info": "Text shown when stream is active"
-    },
-    {
-      "type": "text",
-      "id": "inactive_text",
-      "label": "No Stream Text",
-      "default": "Not Live",
-      "info": "Text shown when no stream is active"
     }
   ]
 }
