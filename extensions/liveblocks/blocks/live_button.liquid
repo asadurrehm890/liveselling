@@ -1,0 +1,354 @@
+{% comment %}
+  Live Stream Status Button
+  Shows different button states based on live stream availability
+  - Shows "LIVE" with red dot when stream is active
+  - Shows "Not Live" with gray dot when no stream is active
+{% endcomment %}
+
+<div 
+  id="live-status-button-{{ block.id }}"
+  class="live-status-button-container"
+  data-shop="{{ shop.permanent_domain }}"
+  data-api-url="https://liveselling-eta.vercel.app"
+  data-check-interval="30000"
+>
+  <button 
+    id="live-status-btn-{{ block.id }}"
+    class="live-status-btn live-status-checking"
+    aria-label="Live stream status"
+    disabled
+  >
+    <span class="live-status-dot"></span>
+    <span class="live-status-text">Checking...</span>
+  </button>
+</div>
+
+<script>
+  (function() {
+    const container = document.getElementById('live-status-button-{{ block.id }}');
+    if (!container) return;
+    
+    const shop = container.dataset.shop;
+    const apiBase = container.dataset.apiUrl;
+    const checkIntervalTime = parseInt(container.dataset.checkInterval) || 30000;
+    
+    const button = document.getElementById('live-status-btn-{{ block.id }}');
+    const dotSpan = button.querySelector('.live-status-dot');
+    const textSpan = button.querySelector('.live-status-text');
+    
+    let checkInterval = null;
+    let currentStreamUrl = null;
+    let isActive = false;
+    
+    // Update button UI based on status
+    function updateButtonUI(status, streamUrl = null) {
+      if (status === 'live') {
+        // Live stream active
+        button.className = 'live-status-btn live-status-active';
+        dotSpan.className = 'live-status-dot live-dot-active';
+        textSpan.textContent = 'LIVE';
+        button.disabled = false;
+        currentStreamUrl = streamUrl;
+        isActive = true;
+      } else if (status === 'not-live') {
+        // No live stream
+        button.className = 'live-status-btn live-status-inactive';
+        dotSpan.className = 'live-status-dot live-dot-inactive';
+        textSpan.textContent = 'Not Live';
+        button.disabled = true;
+        currentStreamUrl = null;
+        isActive = false;
+      } else if (status === 'checking') {
+        // Checking status
+        button.className = 'live-status-btn live-status-checking';
+        dotSpan.className = 'live-status-dot live-dot-checking';
+        textSpan.textContent = 'Checking...';
+        button.disabled = true;
+        currentStreamUrl = null;
+        isActive = false;
+      } else if (status === 'error') {
+        // Error occurred
+        button.className = 'live-status-btn live-status-error';
+        dotSpan.className = 'live-status-dot live-dot-error';
+        textSpan.textContent = 'Error';
+        button.disabled = true;
+        currentStreamUrl = null;
+        isActive = false;
+      }
+    }
+    
+    // Check for active live stream using the API
+    async function checkLiveStream() {
+      try {
+        updateButtonUI('checking');
+        
+        const response = await fetch(`${apiBase}/api/frontend?shop=${encodeURIComponent(shop)}`);
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+          // Live stream is active
+          updateButtonUI('live', result.data.fullViewerUrl);
+        } else {
+          // No active live stream
+          updateButtonUI('not-live');
+        }
+      } catch (error) {
+        console.error('Error checking live stream:', error);
+        updateButtonUI('error');
+      }
+    }
+    
+    // Handle button click - open live stream if active
+    function handleButtonClick(e) {
+      e.preventDefault();
+      if (isActive && currentStreamUrl) {
+        window.open(currentStreamUrl, '_blank');
+      }
+    }
+    
+    // Add click event listener
+    if (button) {
+      button.addEventListener('click', handleButtonClick);
+    }
+    
+    // Start checking for live stream
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        checkLiveStream();
+        checkInterval = setInterval(checkLiveStream, checkIntervalTime);
+      });
+    } else {
+      checkLiveStream();
+      checkInterval = setInterval(checkLiveStream, checkIntervalTime);
+    }
+    
+    // Cleanup interval on page unload
+    window.addEventListener('beforeunload', function() {
+      if (checkInterval) {
+        clearInterval(checkInterval);
+      }
+    });
+  })();
+</script>
+
+<style>
+  .live-status-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 40px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+  
+  /* Active/Live State */
+  .live-status-active {
+    background: linear-gradient(135deg, #ff3b30, #dc2626);
+    color: white;
+    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+    animation: pulse 2s infinite;
+  }
+  
+  .live-status-active:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ff2b20, #b91c1c);
+    box-shadow: 0 4px 15px rgba(220, 38, 38, 0.4);
+  }
+  
+  .live-status-active:active {
+    transform: translateY(0);
+  }
+  
+  /* Inactive/Not Live State */
+  .live-status-inactive {
+    background: #6b7280;
+    color: #e5e7eb;
+    box-shadow: none;
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+  
+  /* Checking State */
+  .live-status-checking {
+    background: #f3f4f6;
+    color: #9ca3af;
+    border: 1px solid #e5e7eb;
+    cursor: wait;
+  }
+  
+  /* Error State */
+  .live-status-error {
+    background: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+    cursor: not-allowed;
+  }
+  
+  /* Dot styles */
+  .live-status-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+  }
+  
+  /* Active live dot - blinking red */
+  .live-dot-active {
+    background-color: #ffffff;
+    animation: blink 1s infinite;
+    box-shadow: 0 0 5px rgba(255, 255, 255, 0.8);
+  }
+  
+  /* Inactive dot - gray */
+  .live-dot-inactive {
+    background-color: #9ca3af;
+    animation: none;
+  }
+  
+  /* Checking dot - yellow/orange pulsing */
+  .live-dot-checking {
+    background-color: #f59e0b;
+    animation: pulse 1.5s infinite;
+  }
+  
+  /* Error dot - red */
+  .live-dot-error {
+    background-color: #dc2626;
+    animation: none;
+  }
+  
+  /* Animations */
+  @keyframes blink {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.5;
+      transform: scale(0.8);
+    }
+  }
+  
+  @keyframes pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7);
+    }
+    70% {
+      box-shadow: 0 0 0 10px rgba(220, 38, 38, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+    }
+  }
+  
+  /* Mobile responsive */
+  @media (max-width: 768px) {
+    .live-status-btn {
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+    
+    .live-status-dot {
+      width: 8px;
+      height: 8px;
+    }
+  }
+  
+  /* Optional: Different sizes based on settings */
+  .live-status-btn.size-small {
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+  
+  .live-status-btn.size-large {
+    padding: 10px 20px;
+    font-size: 16px;
+  }
+  
+  .live-status-btn.size-large .live-status-dot {
+    width: 12px;
+    height: 12px;
+  }
+</style>
+
+{% schema %}
+{
+  "name": "Live Status Button",
+  "target": "section",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Button Appearance"
+    },
+    {
+      "type": "select",
+      "id": "button_size",
+      "label": "Button Size",
+      "options": [
+        { "value": "small", "label": "Small" },
+        { "value": "medium", "label": "Medium" },
+        { "value": "large", "label": "Large" }
+      ],
+      "default": "medium"
+    },
+    {
+      "type": "range",
+      "id": "check_interval",
+      "label": "Check Interval (seconds)",
+      "min": 10,
+      "max": 60,
+      "step": 5,
+      "default": 30,
+      "info": "How often to check for live stream status"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_on_mobile",
+      "label": "Show on mobile devices",
+      "default": true
+    },
+    {
+      "type": "header",
+      "content": "Colors"
+    },
+    {
+      "type": "color",
+      "id": "live_color",
+      "label": "Live Button Color",
+      "default": "#dc2626"
+    },
+    {
+      "type": "color",
+      "id": "inactive_color",
+      "label": "Inactive Button Color",
+      "default": "#6b7280"
+    },
+    {
+      "type": "header",
+      "content": "Text"
+    },
+    {
+      "type": "text",
+      "id": "live_text",
+      "label": "Live Stream Text",
+      "default": "LIVE",
+      "info": "Text shown when stream is active"
+    },
+    {
+      "type": "text",
+      "id": "inactive_text",
+      "label": "No Stream Text",
+      "default": "Not Live",
+      "info": "Text shown when no stream is active"
+    }
+  ]
+}
+{% endschema %}
