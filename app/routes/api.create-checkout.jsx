@@ -4,13 +4,10 @@ import { unauthenticated } from "../shopify.server";
 export async function action({ request }) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { shop: shopFromBody, lineItems } = body || {};
+    const { lineItems } = body || {};
 
-    // Also accept shop from query string as a fallback
-    const url = new URL(request.url);
-    const shopFromQuery = url.searchParams.get("shop");
-
-    const shop = shopFromBody || shopFromQuery;
+    // Hard-code the shop here
+    const shop = "burdauae.myshopify.com";
 
     console.log("Creating checkout (cart) for shop:", shop);
     console.log("Raw line items payload:", lineItems);
@@ -25,17 +22,16 @@ export async function action({ request }) {
     }
 
     // Get unauthenticated Storefront client for this shop
-    // Requires storefront config + token in shopify.server.js
-
-    shop="burdauae.myshopify.com";
     const { storefront } = await unauthenticated.storefront(shop);
 
     // Ensure merchandiseId is a ProductVariant GID
     const lines = lineItems.map((item) => {
       let merchandiseId = item.variantId;
 
-      // If it's a plain numeric ID (e.g. "45443281748012"), convert to GID
-      if (typeof merchandiseId === "string" && !merchandiseId.startsWith("gid://")) {
+      if (
+        typeof merchandiseId === "string" &&
+        !merchandiseId.startsWith("gid://")
+      ) {
         merchandiseId = `gid://shopify/ProductVariant/${merchandiseId}`;
       }
 
@@ -47,7 +43,6 @@ export async function action({ request }) {
 
     console.log("Lines sent to cartCreate:", lines);
 
-    // VALIDATED Storefront mutation (against Storefront schema)
     const mutation = `#graphql
       mutation CartCreateForVariants($cartInput: CartInput) {
         cartCreate(input: $cartInput) {
@@ -90,7 +85,6 @@ export async function action({ request }) {
       JSON.stringify(responseJson, null, 2),
     );
 
-    // Handle top-level GraphQL errors
     if (responseJson.errors && responseJson.errors.length > 0) {
       console.error("GraphQL errors:", responseJson.errors);
       return new Response(
@@ -141,7 +135,6 @@ export async function action({ request }) {
   } catch (error) {
     console.error("Checkout (cart) creation error (Storefront):", error);
 
-    // Handle Response-like errors (e.g., internal fetch errors)
     if (
       error &&
       typeof error.status === "number" &&
