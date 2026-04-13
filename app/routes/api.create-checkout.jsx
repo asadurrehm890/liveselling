@@ -1,13 +1,16 @@
 // app/routes/api.create-checkout.jsx
-import { authenticate } from "../shopify.server";
+import { unauthenticated } from "../shopify.server";
 
 export async function action({ request }) {
   try {
-    // Public / non-embedded route: use Storefront API, not Admin
-    const { storefront } = await authenticate.public.unstable(request);
+    const body = await request.json().catch(() => ({}));
+    const { shop: shopFromBody, lineItems } = body || {};
 
-    const body = await request.json();
-    const { shop, lineItems } = body;
+    // Also accept shop from query string as a fallback
+    const url = new URL(request.url);
+    const shopFromQuery = url.searchParams.get("shop");
+
+    const shop = shopFromBody || shopFromQuery;
 
     console.log("Creating checkout (cart) for shop:", shop);
     console.log("Raw line items payload:", lineItems);
@@ -20,6 +23,10 @@ export async function action({ request }) {
         { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }
+
+    // Get unauthenticated Storefront client for this shop
+    // See: https://shopify.dev/docs/api/shopify-app-react-router/latest/unauthenticated/unauthenticated-storefront
+    const { storefront } = await unauthenticated.storefront(shop);
 
     // Ensure merchandiseId is a ProductVariant GID
     const lines = lineItems.map((item) => {
@@ -79,9 +86,7 @@ export async function action({ request }) {
       },
     };
 
-    const response = await storefront.graphql(mutation, {
-      variables,
-    });
+    const response = await storefront.graphql(mutation, { variables });
 
     const responseJson = await response.json();
     console.log(
@@ -140,13 +145,12 @@ export async function action({ request }) {
   } catch (error) {
     console.error("Checkout (cart) creation error (Storefront):", error);
 
-    // Some Shopify helpers might throw Response-like objects that aren't instanceof global Response
+    // If the error is a Response-like object
     if (
       error &&
       typeof error.status === "number" &&
       typeof error.text === "function"
     ) {
-      // Treat as Response
       let bodyText = "";
       try {
         bodyText = await error.text();
