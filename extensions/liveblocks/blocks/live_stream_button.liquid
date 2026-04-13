@@ -1,0 +1,236 @@
+{% comment %}
+  Live Stream Button for Header
+  Shows a button when there's an active live stream
+  This block can be added to any section or header area
+{% endcomment %}
+
+<div 
+  id="live-stream-header-button"
+  class="live-stream-header-button"
+  data-shop="{{ shop.permanent_domain }}"
+  data-api-url="https://liveselling-eta.vercel.app"
+  style="display: none;"
+>
+  <button 
+    id="live-stream-join-btn" 
+    class="live-stream-join-btn"
+    aria-label="Join live stream"
+  >
+    <span class="live-stream-dot"></span>
+    <span class="live-stream-text">LIVE NOW</span>
+  </button>
+</div>
+
+<script>
+  (function() {
+    const container = document.getElementById('live-stream-header-button');
+    if (!container) return;
+    
+    const shop = container.dataset.shop;
+    const apiBase = container.dataset.apiUrl;
+    
+    let checkInterval = null;
+    let isActive = false;
+    let currentStreamUrl = null;
+    
+    // Check for active live stream
+    async function checkLiveStream() {
+      try {
+        const response = await fetch(`${apiBase}/viewerfrontend?shop=${encodeURIComponent(shop)}&format=json`);
+        const data = await response.json();
+        
+        if (data.viewerLink && !data.error) {
+          currentStreamUrl = data.viewerLink.fullViewerUrl;
+          
+          if (!isActive) {
+            isActive = true;
+            container.style.display = 'block';
+            
+            // Add animation class
+            const btn = document.getElementById('live-stream-join-btn');
+            if (btn) {
+              btn.classList.add('pulse-animation');
+            }
+          }
+        } else {
+          if (isActive) {
+            isActive = false;
+            container.style.display = 'none';
+            currentStreamUrl = null;
+          }
+        }
+      } catch (error) {
+        console.error('Error checking live stream:', error);
+        if (isActive) {
+          container.style.display = 'none';
+          isActive = false;
+        }
+      }
+    }
+    
+    // Handle button click
+    document.addEventListener('click', function(e) {
+      const btn = document.getElementById('live-stream-join-btn');
+      if (btn && btn.contains(e.target) && currentStreamUrl) {
+        e.preventDefault();
+        window.open(currentStreamUrl, '_blank');
+      }
+    });
+    
+    // Initial check
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        checkLiveStream();
+        // Check every 30 seconds
+        checkInterval = setInterval(checkLiveStream, 30000);
+      });
+    } else {
+      checkLiveStream();
+      checkInterval = setInterval(checkLiveStream, 30000);
+    }
+    
+    // Cleanup interval on page unload
+    window.addEventListener('beforeunload', function() {
+      if (checkInterval) {
+        clearInterval(checkInterval);
+      }
+    });
+  })();
+</script>
+
+<style>
+  .live-stream-header-button {
+    display: inline-block;
+    margin: 0 10px;
+  }
+  
+  .live-stream-join-btn {
+    background: linear-gradient(135deg, #ff3b30, #dc2626);
+    color: white;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 40px;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    letter-spacing: 0.5px;
+  }
+  
+  .live-stream-join-btn:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ff2b20, #b91c1c);
+    box-shadow: 0 4px 15px rgba(220, 38, 38, 0.4);
+  }
+  
+  .live-stream-join-btn:active {
+    transform: translateY(0);
+  }
+  
+  .live-stream-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background-color: #ffffff;
+    border-radius: 50%;
+    animation: live-blink 1s infinite;
+  }
+  
+  .live-stream-text {
+    font-size: 14px;
+    font-weight: 700;
+  }
+  
+  .pulse-animation {
+    animation: pulse 2s infinite;
+  }
+  
+  @keyframes live-blink {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.5;
+      transform: scale(0.8);
+    }
+  }
+  
+  @keyframes pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7);
+    }
+    70% {
+      box-shadow: 0 0 0 10px rgba(220, 38, 38, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+    }
+  }
+  
+  /* Mobile responsive */
+  @media (max-width: 768px) {
+    .live-stream-join-btn {
+      padding: 6px 14px;
+      font-size: 12px;
+    }
+    
+    .live-stream-dot {
+      width: 6px;
+      height: 6px;
+    }
+    
+    .live-stream-text {
+      font-size: 12px;
+    }
+  }
+  
+  /* Hide on very small screens if needed */
+  @media (max-width: 480px) {
+    .live-stream-header-button {
+      margin: 0 5px;
+    }
+    
+    .live-stream-join-btn {
+      padding: 5px 10px;
+    }
+  }
+</style>
+
+{% schema %}
+{
+  "name": "Live Stream Button",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Button Text",
+      "default": "LIVE NOW",
+      "info": "Text displayed on the button"
+    },
+    {
+      "type": "range",
+      "id": "button_padding",
+      "label": "Button Padding (px)",
+      "min": 4,
+      "max": 20,
+      "step": 2,
+      "default": 8,
+      "info": "Vertical padding of the button"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_on_mobile",
+      "label": "Show on mobile",
+      "default": true,
+      "info": "Display button on mobile devices"
+    }
+  ]
+}
+{% endschema %}
