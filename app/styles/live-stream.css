@@ -775,3 +775,7 @@ body {
     gap: calc(var(--gap) * 1);
   }
 }
+
+.live-stream-quantity-input-full{
+  text-align: center;
+}
