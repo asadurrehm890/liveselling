@@ -56,7 +56,7 @@
         // No live stream
         button.className = 'live-status-btn live-status-inactive';
         dotSpan.className = 'live-status-dot live-dot-inactive';
-        textSpan.textContent = 'Not Live';
+        textSpan.textContent = 'Live';
         button.disabled = true;
         currentViewerUrl = null;
         isActive = false;
@@ -143,7 +143,7 @@
 <style>
 
     .live-status-button-wrapper {
-        position: absolute;
+        position: fixed;
         z-index: 99;
         top: 140px;
         left: 10px;
