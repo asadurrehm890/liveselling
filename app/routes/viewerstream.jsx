@@ -35,13 +35,14 @@ export default function ViewerstreamPage() {
   // Track selected variants for each product
   const [selectedVariants, setSelectedVariants] = useState({});
 
+  // Track quantity for each product
+  const [quantities, setQuantities] = useState({});
+
   // Generate client ID only on the client side
   useEffect(() => {
     let id = localStorage.getItem("chat_client_id");
     if (!id) {
-      id = `client_${Date.now()}_${Math.random()
-        .toString(36)
-        .substr(2, 9)}`;
+      id = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       localStorage.setItem("chat_client_id", id);
     }
     setClientId(id);
@@ -70,17 +71,24 @@ export default function ViewerstreamPage() {
       })
       .then((data) => {
         setProducts(data.products || []);
+
         // Initialize selected variants with first available variant for each product
         const initialVariants = {};
+        const initialQuantities = {};
+
         (data.products || []).forEach((product) => {
           const availableVariant =
             product.variants?.find((v) => v.availableForSale) ||
             product.variants?.[0];
           if (availableVariant) {
             initialVariants[product.id] = availableVariant;
+            // default quantity = 1
+            initialQuantities[product.id] = 1;
           }
         });
+
         setSelectedVariants(initialVariants);
+        setQuantities(initialQuantities);
       })
       .catch((err) => {
         console.error("Error fetching products:", err);
@@ -263,17 +271,34 @@ export default function ViewerstreamPage() {
     }
   };
 
+  // Handle quantity change
+  const handleQuantityChange = (productId, value) => {
+    const parsed = parseInt(value, 10);
+    const safeValue = Number.isNaN(parsed) || parsed < 1 ? 1 : parsed;
+
+    setQuantities((prev) => ({
+      ...prev,
+      [productId]: safeValue,
+    }));
+  };
+
   // Handle "Add to Cart & Checkout" button click
   const handleBuyNow = (productId) => {
     const product = products.find((p) => p.id === productId);
     const selectedVariant = selectedVariants[productId];
+    const quantity = quantities[productId] || 1;
 
     if (!product || !selectedVariant) {
       alert("No variant selected for this product.");
       return;
     }
 
-    const checkoutUrl = getCheckoutUrl(product, selectedVariant);
+    if (!quantity || quantity < 1) {
+      alert("Please enter a valid quantity (minimum 1).");
+      return;
+    }
+
+    const checkoutUrl = getCheckoutUrl(product, selectedVariant, quantity);
     if (!checkoutUrl) {
       alert("Could not create checkout link. Please try again.");
       return;
@@ -300,15 +325,17 @@ export default function ViewerstreamPage() {
     return url;
   };
 
-  // Get checkout URL for a given product + selected variant
-  const getCheckoutUrl = (product, variant) => {
+  // Get checkout URL for a given product + selected variant + quantity
+  const getCheckoutUrl = (product, variant, quantity) => {
     if (!shop || !variant?.id) return null;
 
     const numericVariantId = getNumericIdFromGid(variant.id);
     if (!numericVariantId) return null;
 
-    const quantity = 1;
-    return `https://${shop}/cart/${numericVariantId}:${quantity}`;
+    const safeQuantity = !quantity || quantity < 1 ? 1 : quantity;
+
+    // /cart/<variant_id>:<qty>
+    return `https://${shop}/cart/${numericVariantId}:${safeQuantity}`;
   };
 
   // Format price
@@ -393,7 +420,14 @@ export default function ViewerstreamPage() {
 
           <div className="live-stream-chat-messages">
             {messages.length === 0 ? (
-              <p style={{ color: "#777", margin: 0, textAlign: "center", padding: "20px" }}>
+              <p
+                style={{
+                  color: "#777",
+                  margin: 0,
+                  textAlign: "center",
+                  padding: "20px",
+                }}
+              >
                 No messages yet. Be the first to chat!
               </p>
             ) : (
@@ -438,9 +472,7 @@ export default function ViewerstreamPage() {
               type="text"
               className="live-stream-chat-input"
               placeholder={
-                isConnected
-                  ? "Type your message..."
-                  : "Connecting to chat..."
+                isConnected ? "Type your message..." : "Connecting to chat..."
               }
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
@@ -483,16 +515,28 @@ export default function ViewerstreamPage() {
             {products.map((product) => {
               const selectedVariant = selectedVariants[product.id];
               const image = selectedVariant?.image || product.featuredImage;
-              const price = selectedVariant?.price ?? product.priceRangeV2?.minVariantPrice;
-              const currencyCode = product.priceRangeV2?.minVariantPrice?.currencyCode || undefined;
+              const price =
+                selectedVariant?.price ??
+                product.priceRangeV2?.minVariantPrice;
+              const currencyCode =
+                product.priceRangeV2?.minVariantPrice?.currencyCode ||
+                undefined;
               const isAvailable = selectedVariant?.availableForSale !== false;
               const productUrl = getProductUrl(product, selectedVariant);
+              const quantity = quantities[product.id] ?? 1;
 
               return (
-                <article key={product.id} className="live-stream-product-card-full">
+                <article
+                  key={product.id}
+                  className="live-stream-product-card-full"
+                >
                   <div className="live-stream-product-image-wrapper">
                     {image ? (
-                      <a href={productUrl || "#"} target="_blank" rel="noopener noreferrer">
+                      <a
+                        href={productUrl || "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
                         <img
                           src={image.url}
                           alt={image.altText || product.title}
@@ -508,7 +552,11 @@ export default function ViewerstreamPage() {
 
                   <div className="live-stream-product-details-full">
                     <h3 className="live-stream-product-name-full">
-                      <a href={productUrl || "#"} target="_blank" rel="noopener noreferrer">
+                      <a
+                        href={productUrl || "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
                         {product.title}
                       </a>
                     </h3>
@@ -523,12 +571,16 @@ export default function ViewerstreamPage() {
                       <div className="live-stream-variant-options-full">
                         {product.options.map((option) => {
                           const currentVariant = selectedVariants[product.id];
-                          const currentValue = currentVariant?.selectedOptions?.find(
-                            (opt) => opt.name === option.name
-                          )?.value || option.values[0];
+                          const currentValue =
+                            currentVariant?.selectedOptions?.find(
+                              (opt) => opt.name === option.name,
+                            )?.value || option.values[0];
 
                           return (
-                            <div key={option.id} className="live-stream-variant-option-full">
+                            <div
+                              key={option.id}
+                              className="live-stream-variant-option-full"
+                            >
                               <label className="live-stream-variant-label-full">
                                 {option.name}:
                               </label>
@@ -537,60 +589,97 @@ export default function ViewerstreamPage() {
                                 value={currentValue}
                                 onChange={(e) => {
                                   const newValue = e.target.value;
-                                  const currentVariant = selectedVariants[product.id];
+                                  const currentVariant =
+                                    selectedVariants[product.id];
 
-                                  const desiredOptions = product.options.map((optDef) => {
-                                    if (optDef.name === option.name) {
-                                      return { name: optDef.name, value: newValue };
-                                    }
-                                    const currentOptValue = currentVariant?.selectedOptions?.find(
-                                      (o) => o.name === optDef.name
-                                    )?.value || optDef.values[0];
-                                    return { name: optDef.name, value: currentOptValue };
-                                  });
+                                  const desiredOptions = product.options.map(
+                                    (optDef) => {
+                                      if (optDef.name === option.name) {
+                                        return {
+                                          name: optDef.name,
+                                          value: newValue,
+                                        };
+                                      }
+                                      const currentOptValue =
+                                        currentVariant?.selectedOptions?.find(
+                                          (o) => o.name === optDef.name,
+                                        )?.value || optDef.values[0];
+                                      return {
+                                        name: optDef.name,
+                                        value: currentOptValue,
+                                      };
+                                    },
+                                  );
 
-                                  const newVariant = product.variants?.find((v) => {
-                                    if (!v.selectedOptions) return false;
-                                    return desiredOptions.every((desiredOpt) =>
-                                      v.selectedOptions.some(
-                                        (opt) => opt.name === desiredOpt.name && opt.value === desiredOpt.value
-                                      )
-                                    );
-                                  });
+                                  const newVariant = product.variants?.find(
+                                    (v) => {
+                                      if (!v.selectedOptions) return false;
+                                      return desiredOptions.every(
+                                        (desiredOpt) =>
+                                          v.selectedOptions.some(
+                                            (opt) =>
+                                              opt.name === desiredOpt.name &&
+                                              opt.value === desiredOpt.value,
+                                          ),
+                                      );
+                                    },
+                                  );
 
                                   if (newVariant) {
-                                    handleVariantChange(product.id, newVariant.id);
+                                    handleVariantChange(
+                                      product.id,
+                                      newVariant.id,
+                                    );
                                   }
                                 }}
                               >
                                 {option.values.map((value) => {
-                                  const currentVariant = selectedVariants[product.id];
-                                  const desiredOptionsForThisValue = product.options.map((optDef) => {
-                                    if (optDef.name === option.name) {
-                                      return { name: optDef.name, value: value };
-                                    }
-                                    const currentOptValue = currentVariant?.selectedOptions?.find(
-                                      (o) => o.name === optDef.name
-                                    )?.value || optDef.values[0];
-                                    return { name: optDef.name, value: currentOptValue };
-                                  });
+                                  const currentVariant =
+                                    selectedVariants[product.id];
+                                  const desiredOptionsForThisValue =
+                                    product.options.map((optDef) => {
+                                      if (optDef.name === option.name) {
+                                        return {
+                                          name: optDef.name,
+                                          value: value,
+                                        };
+                                      }
+                                      const currentOptValue =
+                                        currentVariant?.selectedOptions?.find(
+                                          (o) => o.name === optDef.name,
+                                        )?.value || optDef.values[0];
+                                      return {
+                                        name: optDef.name,
+                                        value: currentOptValue,
+                                      };
+                                    });
 
-                                  const variantForValue = product.variants?.find((v) => {
-                                    if (!v.selectedOptions) return false;
-                                    return desiredOptionsForThisValue.every((desiredOpt) =>
-                                      v.selectedOptions.some(
-                                        (opt) => opt.name === desiredOpt.name && opt.value === desiredOpt.value
-                                      )
-                                    );
-                                  });
+                                  const variantForValue = product.variants?.find(
+                                    (v) => {
+                                      if (!v.selectedOptions) return false;
+                                      return desiredOptionsForThisValue.every(
+                                        (desiredOpt) =>
+                                          v.selectedOptions.some(
+                                            (opt) =>
+                                              opt.name === desiredOpt.name &&
+                                              opt.value === desiredOpt.value,
+                                          ),
+                                      );
+                                    },
+                                  );
 
                                   return (
                                     <option
                                       key={value}
                                       value={value}
-                                      disabled={!variantForValue?.availableForSale}
+                                      disabled={
+                                        !variantForValue?.availableForSale
+                                      }
                                     >
-                                      {value} {!variantForValue?.availableForSale ? "(Sold Out)" : ""}
+                                      {value}{" "}
+                                      {!variantForValue?.availableForSale
+                                        ? "(Sold Out)"
+                                        : ""}
                                     </option>
                                   );
                                 })}
@@ -604,8 +693,44 @@ export default function ViewerstreamPage() {
                     {/* Price */}
                     <p className="live-stream-product-price-full">
                       Price: {formatPrice(price, currencyCode)}
-                      {!isAvailable && <span className="live-stream-sold-out-full"> (Sold Out)</span>}
+                      {!isAvailable && (
+                        <span className="live-stream-sold-out-full">
+                          {" "}
+                          (Sold Out)
+                        </span>
+                      )}
                     </p>
+
+                    {/* Quantity Selector */}
+                    <div className="live-stream-quantity-wrapper-full">
+                      <label
+                        className="live-stream-quantity-label-full"
+                        htmlFor={`qty-${product.id}`}
+                      >
+                        Quantity:
+                      </label>
+                      <input
+                        id={`qty-${product.id}`}
+                        type="number"
+                        min="1"
+                        step="1"
+                        className="live-stream-quantity-input-full"
+                        value={quantity}
+                        onChange={(e) =>
+                          handleQuantityChange(product.id, e.target.value)
+                        }
+                        onBlur={(e) => {
+                          // normalize on blur
+                          if (
+                            !e.target.value ||
+                            parseInt(e.target.value, 10) < 1
+                          ) {
+                            handleQuantityChange(product.id, 1);
+                          }
+                        }}
+                        disabled={!isAvailable}
+                      />
+                    </div>
 
                     {/* Buy Button */}
                     <button
