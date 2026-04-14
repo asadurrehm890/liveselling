@@ -38,6 +38,10 @@ export default function ViewerstreamPage() {
   // Track quantity for each product
   const [quantities, setQuantities] = useState({});
 
+  // Cart sidebar
+  const [cartItems, setCartItems] = useState([]); // each item: { productId, productTitle, productHandle, variantId, variantTitle, image, price, currencyCode, quantity }
+  const [isCartOpen, setIsCartOpen] = useState(false);
+
   // Generate client ID only on the client side
   useEffect(() => {
     let id = localStorage.getItem("chat_client_id");
@@ -282,8 +286,8 @@ export default function ViewerstreamPage() {
     }));
   };
 
-  // Handle "Add to Cart & Checkout" button click
-  const handleBuyNow = (productId) => {
+  // Add current product + variant + quantity to local cart & open sidebar
+  const handleAddToCart = (productId) => {
     const product = products.find((p) => p.id === productId);
     const selectedVariant = selectedVariants[productId];
     const quantity = quantities[productId] || 1;
@@ -298,13 +302,57 @@ export default function ViewerstreamPage() {
       return;
     }
 
-    const checkoutUrl = getCheckoutUrl(product, selectedVariant, quantity);
-    if (!checkoutUrl) {
-      alert("Could not create checkout link. Please try again.");
+    const numericVariantId = getNumericIdFromGid(selectedVariant.id);
+    if (!numericVariantId) {
+      alert("Could not find a valid variant for this product.");
       return;
     }
 
-    window.location.href = checkoutUrl;
+    // Merge items by variantId if already in cart
+    setCartItems((prev) => {
+      const existingIndex = prev.findIndex(
+        (item) => item.variantId === selectedVariant.id,
+      );
+      if (existingIndex > -1) {
+        const updated = [...prev];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          quantity: updated[existingIndex].quantity + quantity,
+        };
+        return updated;
+      }
+
+      const price =
+        selectedVariant?.price ?? product.priceRangeV2?.minVariantPrice;
+      const currencyCode =
+        price?.currencyCode ||
+        product.priceRangeV2?.minVariantPrice?.currencyCode ||
+        undefined;
+
+      const image = selectedVariant?.image || product.featuredImage;
+
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          productTitle: product.title,
+          productHandle: product.handle,
+          variantId: selectedVariant.id,
+          variantTitle: selectedVariant.title,
+          image,
+          price,
+          currencyCode,
+          quantity,
+        },
+      ];
+    });
+
+    setIsCartOpen(true);
+  };
+
+  // Remove item from cart
+  const handleRemoveCartItem = (variantId) => {
+    setCartItems((prev) => prev.filter((item) => item.variantId !== variantId));
   };
 
   // Get product URL with selected variant
@@ -325,17 +373,34 @@ export default function ViewerstreamPage() {
     return url;
   };
 
-  // Get checkout URL for a given product + selected variant + quantity
-  const getCheckoutUrl = (product, variant, quantity) => {
-    if (!shop || !variant?.id) return null;
+  // Build checkout URL for all items in local cart
+  const getCartCheckoutUrl = (items) => {
+    if (!shop || !items || items.length === 0) return null;
 
-    const numericVariantId = getNumericIdFromGid(variant.id);
-    if (!numericVariantId) return null;
+    const parts = [];
 
-    const safeQuantity = !quantity || quantity < 1 ? 1 : quantity;
+    items.forEach((item) => {
+      const numericVariantId = getNumericIdFromGid(item.variantId);
+      if (!numericVariantId) return;
 
-    // /cart/<variant_id>:<qty>
-    return `https://${shop}/cart/${numericVariantId}:${safeQuantity}`;
+      const safeQuantity = !item.quantity || item.quantity < 1 ? 1 : item.quantity;
+      parts.push(`${numericVariantId}:${safeQuantity}`);
+    });
+
+    if (parts.length === 0) return null;
+
+    // /cart/<variant1>:<qty1>,<variant2>:<qty2>,...
+    return `https://${shop}/cart/${parts.join(",")}`;
+  };
+
+  const handleCheckout = () => {
+    const url = getCartCheckoutUrl(cartItems);
+    if (!url) {
+      alert("Your cart is empty or invalid.");
+      return;
+    }
+
+    window.location.href = url;
   };
 
   // Format price
@@ -353,6 +418,30 @@ export default function ViewerstreamPage() {
     }
 
     return String(price);
+  };
+
+  // Calculate cart total
+  const getCartTotal = () => {
+    if (!cartItems.length) return null;
+
+    // Use currency from first item; in real app you may want to assert single currency
+    const currencyCode = cartItems[0].currencyCode || "";
+
+    const totalAmount = cartItems.reduce((sum, item) => {
+      const priceObj = item.price;
+      let amount = 0;
+
+      if (priceObj && typeof priceObj === "object" && "amount" in priceObj) {
+        amount = parseFloat(priceObj.amount || "0");
+      } else if (typeof priceObj === "number" || typeof priceObj === "string") {
+        amount = parseFloat(priceObj);
+      }
+
+      const qty = item.quantity || 1;
+      return sum + amount * qty;
+    }, 0);
+
+    return `${totalAmount.toFixed(2)} ${currencyCode}`.trim();
   };
 
   return (
@@ -510,7 +599,19 @@ export default function ViewerstreamPage() {
 
       {!loadingProducts && products.length > 0 && (
         <section className="live-stream-products-section">
-          <h2 className="live-stream-section-title">Products in this stream</h2>
+          <div className="live-stream-products-header">
+            <h2 className="live-stream-section-title">
+              Products in this stream
+            </h2>
+            <button
+              type="button"
+              className="live-stream-cart-toggle-button"
+              onClick={() => setIsCartOpen(true)}
+            >
+              Cart ({cartItems.length})
+            </button>
+          </div>
+
           <div className="live-stream-products-grid-full">
             {products.map((product) => {
               const selectedVariant = selectedVariants[product.id];
@@ -732,14 +833,14 @@ export default function ViewerstreamPage() {
                       />
                     </div>
 
-                    {/* Buy Button */}
+                    {/* Add to Cart Button (no direct checkout) */}
                     <button
                       type="button"
                       className="live-stream-buy-button-full"
-                      onClick={() => handleBuyNow(product.id)}
+                      onClick={() => handleAddToCart(product.id)}
                       disabled={!isAvailable}
                     >
-                      {isAvailable ? "Add to cart & checkout" : "Sold Out"}
+                      {isAvailable ? "Add to cart" : "Sold Out"}
                     </button>
                   </div>
                 </article>
@@ -747,6 +848,92 @@ export default function ViewerstreamPage() {
             })}
           </div>
         </section>
+      )}
+
+      {/* Cart Sidebar */}
+      {isCartOpen && (
+        <div className="live-stream-cart-overlay" onClick={() => setIsCartOpen(false)}>
+          <div
+            className="live-stream-cart-sidebar"
+            onClick={(e) => e.stopPropagation()} // prevent closing when clicking inside
+          >
+            <div className="live-stream-cart-header">
+              <h3>Your Cart</h3>
+              <button
+                type="button"
+                className="live-stream-cart-close-button"
+                onClick={() => setIsCartOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            {cartItems.length === 0 ? (
+              <div className="live-stream-cart-empty">
+                Your cart is empty.
+              </div>
+            ) : (
+              <>
+                <div className="live-stream-cart-items">
+                  {cartItems.map((item) => (
+                    <div
+                      key={item.variantId}
+                      className="live-stream-cart-item"
+                    >
+                      <div className="live-stream-cart-item-image">
+                        {item.image ? (
+                          <img
+                            src={item.image.url}
+                            alt={item.image.altText || item.productTitle}
+                          />
+                        ) : (
+                          <div className="live-stream-cart-item-image-placeholder">
+                            No image
+                          </div>
+                        )}
+                      </div>
+                      <div className="live-stream-cart-item-details">
+                        <div className="live-stream-cart-item-title">
+                          {item.productTitle}
+                        </div>
+                        <div className="live-stream-cart-item-variant">
+                          {item.variantTitle}
+                        </div>
+                        <div className="live-stream-cart-item-meta">
+                          <span>
+                            {formatPrice(item.price, item.currencyCode)}
+                          </span>
+                          <span>× {item.quantity}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="live-stream-cart-item-remove"
+                        onClick={() => handleRemoveCartItem(item.variantId)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="live-stream-cart-footer">
+                  <div className="live-stream-cart-total">
+                    <span>Total:</span>
+                    <span>{getCartTotal() || "-"}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="live-stream-cart-checkout-button"
+                    onClick={handleCheckout}
+                  >
+                    Checkout
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
