@@ -1,9 +1,12 @@
 // app/routes/viewerstream.jsx
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useSearchParams } from "react-router-dom";
 import Pusher from "pusher-js";
+import videojs from 'video.js';
+import 'video.js/dist/video-js.css';
+//import './viewerstream.css'; // We'll create this CSS file
 
-// Extract numeric ID from a GraphQL GID like "gid://shopify/ProductVariant/1234567890"
+// Extract numeric ID from a GraphQL GID
 const getNumericIdFromGid = (gid) => {
   if (!gid) return null;
   const parts = gid.split("/");
@@ -21,6 +24,8 @@ export default function ViewerstreamPage() {
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [error, setError] = useState("");
   const [chatError, setChatError] = useState("");
+  const [isStreamOnline, setIsStreamOnline] = useState(false);
+  const [viewerCount, setViewerCount] = useState(0);
 
   // Chat state
   const [messages, setMessages] = useState([]);
@@ -29,20 +34,24 @@ export default function ViewerstreamPage() {
   const pusherRef = useRef(null);
   const channelRef = useRef(null);
 
-  // Create a unique client ID for this browser session
+  // Video player refs
+  const videoRef = useRef(null);
+  const playerRef = useRef(null);
+
+  // Client ID
   const [clientId, setClientId] = useState(null);
 
-  // Track selected variants for each product
+  // Product variant states
   const [selectedVariants, setSelectedVariants] = useState({});
-
-  // Track quantity for each product
   const [quantities, setQuantities] = useState({});
 
-  // Cart sidebar
-  const [cartItems, setCartItems] = useState([]); // each item: { productId, productTitle, productHandle, variantId, variantTitle, image, price, currencyCode, quantity }
+  // Cart states
+  const [cartItems, setCartItems] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
 
-  // Generate client ID only on the client side
+  const OWNCAST_URL = process.env.REACT_APP_OWNCAST_URL || "https://silver-yodel-qrpqrwgxg4pc6wwq-8080.app.github.dev";
+
+  // Generate client ID
   useEffect(() => {
     let id = localStorage.getItem("chat_client_id");
     if (!id) {
@@ -52,18 +61,76 @@ export default function ViewerstreamPage() {
     setClientId(id);
   }, []);
 
-  // Load products for this stream
+  // Check stream status periodically
   useEffect(() => {
-    if (!shop || !idsParam) {
-      return;
+    if (!streamId) return;
+
+    const checkStreamStatus = async () => {
+      try {
+        const response = await fetch(`${OWNCAST_URL}/api/status`);
+        const data = await response.json();
+        setIsStreamOnline(data.online || false);
+        setViewerCount(data.viewerCount || 0);
+      } catch (err) {
+        console.error("Error checking stream status:", err);
+      }
+    };
+
+    checkStreamStatus();
+    const interval = setInterval(checkStreamStatus, 10000);
+
+    return () => clearInterval(interval);
+  }, [streamId, OWNCAST_URL]);
+
+  // Initialize video player with Owncast HLS stream
+  useEffect(() => {
+    if (!streamId || !videoRef.current) return;
+
+    const streamUrl = `${OWNCAST_URL}/hls/stream.m3u8`;
+
+    if (!playerRef.current) {
+      playerRef.current = videojs(videoRef.current, {
+        controls: true,
+        autoplay: false,
+        preload: 'auto',
+        fluid: true,
+        sources: [{
+          src: streamUrl,
+          type: 'application/x-mpegURL'
+        }],
+        controlBar: {
+          volumePanel: true,
+          playToggle: true,
+          currentTimeDisplay: true,
+          timeDivider: true,
+          durationDisplay: true,
+          progressControl: true,
+          liveDisplay: true,
+          fullscreenToggle: true
+        }
+      });
+
+      playerRef.current.on('error', (e) => {
+        console.error('Video player error:', e);
+      });
     }
+
+    return () => {
+      if (playerRef.current) {
+        playerRef.current.dispose();
+        playerRef.current = null;
+      }
+    };
+  }, [streamId, OWNCAST_URL]);
+
+  // Load products
+  useEffect(() => {
+    if (!shop || !idsParam) return;
 
     setError("");
     setLoadingProducts(true);
 
-    const url = `/api/showproducts?shop=${encodeURIComponent(
-      shop,
-    )}&ids=${encodeURIComponent(idsParam)}`;
+    const url = `/api/showproducts?shop=${encodeURIComponent(shop)}&ids=${encodeURIComponent(idsParam)}`;
 
     fetch(url)
       .then(async (res) => {
@@ -76,17 +143,13 @@ export default function ViewerstreamPage() {
       .then((data) => {
         setProducts(data.products || []);
 
-        // Initialize selected variants with first available variant for each product
         const initialVariants = {};
         const initialQuantities = {};
 
         (data.products || []).forEach((product) => {
-          const availableVariant =
-            product.variants?.find((v) => v.availableForSale) ||
-            product.variants?.[0];
+          const availableVariant = product.variants?.find((v) => v.availableForSale) || product.variants?.[0];
           if (availableVariant) {
             initialVariants[product.id] = availableVariant;
-            // default quantity = 1
             initialQuantities[product.id] = 1;
           }
         });
@@ -103,48 +166,27 @@ export default function ViewerstreamPage() {
       });
   }, [shop, idsParam]);
 
-  // Set up Pusher connection for chat
+  // Set up Pusher for chat
   useEffect(() => {
     if (!streamId || !clientId) return;
 
     const pusherKey = window.ENV?.PUSHER_KEY;
     const pusherCluster = window.ENV?.PUSHER_CLUSTER;
 
-    console.log("Pusher config from window.ENV:", {
-      hasKey: !!pusherKey,
-      keyPrefix: pusherKey ? pusherKey.substring(0, 8) : "none",
-      cluster: pusherCluster,
-      streamId: streamId,
-      clientId: clientId,
-    });
-
     if (!pusherKey || !pusherCluster) {
-      console.error("Pusher credentials not found.");
-      setChatError("Chat configuration error. Please contact support.");
+      setChatError("Chat configuration error.");
       return;
     }
-
-    if (pusherKey === "YOUR_PUSHER_KEY" || pusherKey.includes("YOUR_")) {
-      console.error("Invalid Pusher key.");
-      setChatError("Chat configuration error. Invalid API key.");
-      return;
-    }
-
-    setChatError("");
 
     try {
-      console.log("Initializing Pusher with cluster:", pusherCluster);
-
       const pusher = new Pusher(pusherKey, {
         cluster: pusherCluster,
         forceTLS: true,
-        enabledTransports: ["ws", "wss"],
       });
 
       pusherRef.current = pusher;
 
       pusher.connection.bind("connected", () => {
-        console.log("✅ Connected to Pusher");
         setIsConnected(true);
         setChatError("");
       });
@@ -154,8 +196,8 @@ export default function ViewerstreamPage() {
       });
 
       pusher.connection.bind("error", (error) => {
-        console.error("❌ Pusher connection error:", error);
-        setChatError("Chat connection failed. Please refresh the page.");
+        console.error("Pusher error:", error);
+        setChatError("Chat connection failed.");
         setIsConnected(false);
       });
 
@@ -164,28 +206,17 @@ export default function ViewerstreamPage() {
       channelRef.current = channel;
 
       channel.bind("new-message", (message) => {
-        console.log("📨 Received message from Pusher:", message);
-
-        if (message.clientId === clientId) {
-          console.log("🔇 Ignoring own message from Pusher");
-          return;
-        }
-
-        console.log("✅ Adding message from another client:", message.text);
+        if (message.clientId === clientId) return;
         setMessages((prev) => [...prev, message]);
       });
 
       channel.bind("pusher:subscription_succeeded", () => {
-        console.log(`✅ Subscribed to channel: ${channelName}`);
+        console.log(`Subscribed to ${channelName}`);
       });
 
-      channel.bind("pusher:subscription_error", (error) => {
-        console.error(`❌ Subscription error:`, error);
-        setChatError("Failed to join chat room. Please refresh the page.");
-      });
     } catch (error) {
       console.error("Pusher initialization error:", error);
-      setChatError("Failed to initialize chat. Please check your configuration.");
+      setChatError("Failed to initialize chat.");
     }
 
     return () => {
@@ -204,14 +235,7 @@ export default function ViewerstreamPage() {
 
     if (!chatInput.trim()) return;
     if (!isConnected) {
-      setChatError(
-        "Chat not connected. Please wait for connection or refresh the page.",
-      );
-      return;
-    }
-    if (!streamId) return;
-    if (!clientId) {
-      setChatError("Chat not ready. Please refresh the page.");
+      setChatError("Chat not connected.");
       return;
     }
 
@@ -244,17 +268,13 @@ export default function ViewerstreamPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to send message");
+        throw new Error("Failed to send message");
       }
-
-      const data = await response.json();
-      console.log("📤 Message sent successfully:", data);
 
       setMessages((prev) =>
         prev.map((msg) =>
-          msg.id === tempMessage.id ? { ...msg, isPending: false } : msg,
-        ),
+          msg.id === tempMessage.id ? { ...msg, isPending: false } : msg
+        )
       );
     } catch (err) {
       console.error("Error sending message:", err);
@@ -263,7 +283,6 @@ export default function ViewerstreamPage() {
     }
   };
 
-  // Handle variant selection change
   const handleVariantChange = (productId, variantId) => {
     const product = products.find((p) => p.id === productId);
     const variant = product?.variants?.find((v) => v.id === variantId);
@@ -275,43 +294,34 @@ export default function ViewerstreamPage() {
     }
   };
 
-  // Handle quantity change
   const handleQuantityChange = (productId, value) => {
     const parsed = parseInt(value, 10);
     const safeValue = Number.isNaN(parsed) || parsed < 1 ? 1 : parsed;
-
     setQuantities((prev) => ({
       ...prev,
       [productId]: safeValue,
     }));
   };
 
-  // Add current product + variant + quantity to local cart & open sidebar
   const handleAddToCart = (productId) => {
     const product = products.find((p) => p.id === productId);
     const selectedVariant = selectedVariants[productId];
     const quantity = quantities[productId] || 1;
 
     if (!product || !selectedVariant) {
-      alert("No variant selected for this product.");
-      return;
-    }
-
-    if (!quantity || quantity < 1) {
-      alert("Please enter a valid quantity (minimum 1).");
+      alert("No variant selected.");
       return;
     }
 
     const numericVariantId = getNumericIdFromGid(selectedVariant.id);
     if (!numericVariantId) {
-      alert("Could not find a valid variant for this product.");
+      alert("Invalid variant.");
       return;
     }
 
-    // Merge items by variantId if already in cart
     setCartItems((prev) => {
       const existingIndex = prev.findIndex(
-        (item) => item.variantId === selectedVariant.id,
+        (item) => item.variantId === selectedVariant.id
       );
       if (existingIndex > -1) {
         const updated = [...prev];
@@ -322,12 +332,9 @@ export default function ViewerstreamPage() {
         return updated;
       }
 
-      const price =
-        selectedVariant?.price ?? product.priceRangeV2?.minVariantPrice;
-      const currencyCode =
-        price?.currencyCode ||
-        product.priceRangeV2?.minVariantPrice?.currencyCode ||
-        undefined;
+      const price = selectedVariant?.price ?? product.priceRangeV2?.minVariantPrice;
+      const currencyCode = price?.currencyCode ||
+        product.priceRangeV2?.minVariantPrice?.currencyCode;
 
       const image = selectedVariant?.image || product.featuredImage;
 
@@ -350,21 +357,16 @@ export default function ViewerstreamPage() {
     setIsCartOpen(true);
   };
 
-  // Remove item from cart
   const handleRemoveCartItem = (variantId) => {
     setCartItems((prev) => prev.filter((item) => item.variantId !== variantId));
   };
 
-  // Get product URL with selected variant
   const getProductUrl = (product, variant) => {
     if (!shop) return null;
     let url = `https://${shop}/products/${product.handle}`;
     if (variant && variant.selectedOptions?.length > 0) {
       const variantParams = variant.selectedOptions
-        .map(
-          (opt) =>
-            `${encodeURIComponent(opt.name)}=${encodeURIComponent(opt.value)}`,
-        )
+        .map((opt) => `${encodeURIComponent(opt.name)}=${encodeURIComponent(opt.value)}`)
         .join("&");
       if (variantParams) {
         url += `?${variantParams}`;
@@ -373,183 +375,135 @@ export default function ViewerstreamPage() {
     return url;
   };
 
-  // Build checkout URL for all items in local cart
   const getCartCheckoutUrl = (items) => {
     if (!shop || !items || items.length === 0) return null;
 
     const parts = [];
-
     items.forEach((item) => {
       const numericVariantId = getNumericIdFromGid(item.variantId);
       if (!numericVariantId) return;
-
       const safeQuantity = !item.quantity || item.quantity < 1 ? 1 : item.quantity;
       parts.push(`${numericVariantId}:${safeQuantity}`);
     });
 
     if (parts.length === 0) return null;
-
-    // /cart/<variant1>:<qty1>,<variant2>:<qty2>,...
     return `https://${shop}/cart/${parts.join(",")}`;
   };
 
   const handleCheckout = () => {
     const url = getCartCheckoutUrl(cartItems);
     if (!url) {
-      alert("Your cart is empty or invalid.");
+      alert("Your cart is empty.");
       return;
     }
-
     window.location.href = url;
   };
 
-  // Format price
   const formatPrice = (price, fallbackCurrencyCode) => {
     if (price == null) return "N/A";
-
     if (typeof price === "object" && "amount" in price) {
-      const amount = price.amount;
-      const currencyCode = price.currencyCode || fallbackCurrencyCode || "";
-      return `${amount} ${currencyCode}`.trim();
+      return `${price.amount} ${price.currencyCode || fallbackCurrencyCode || ""}`.trim();
     }
-
     if (fallbackCurrencyCode) {
       return `${price} ${fallbackCurrencyCode}`;
     }
-
     return String(price);
   };
 
-  // Calculate cart total
   const getCartTotal = () => {
     if (!cartItems.length) return null;
-
-    // Use currency from first item; in real app you may want to assert single currency
     const currencyCode = cartItems[0].currencyCode || "";
-
     const totalAmount = cartItems.reduce((sum, item) => {
       const priceObj = item.price;
       let amount = 0;
-
       if (priceObj && typeof priceObj === "object" && "amount" in priceObj) {
         amount = parseFloat(priceObj.amount || "0");
       } else if (typeof priceObj === "number" || typeof priceObj === "string") {
         amount = parseFloat(priceObj);
       }
-
-      const qty = item.quantity || 1;
-      return sum + amount * qty;
+      return sum + amount * (item.quantity || 1);
     }, 0);
-
     return `${totalAmount.toFixed(2)} ${currencyCode}`.trim();
   };
 
   return (
     <div className="live-stream-container">
-      {/* Header */}
       <header style={{ marginBottom: "2rem", textAlign: "center" }}>
-        <h1 className="live-stream-title">Live Stream</h1>
+        <h1>Live Stream</h1>
         {streamId ? (
-          <p style={{ margin: 0, color: "#555" }}>
-            Stream ID: <strong>{streamId}</strong>
-          </p>
+          <>
+            <p>Stream ID: <strong>{streamId}</strong></p>
+            <div style={{ marginTop: "8px" }}>
+              <span style={{
+                display: "inline-block",
+                padding: "4px 12px",
+                borderRadius: "20px",
+                fontSize: "14px",
+                fontWeight: "bold",
+                backgroundColor: isStreamOnline ? "#28a745" : "#dc3545",
+                color: "white"
+              }}>
+                {isStreamOnline ? "🔴 LIVE" : "⚫ OFFLINE"}
+              </span>
+              {isStreamOnline && viewerCount > 0 && (
+                <span style={{ marginLeft: "12px" }}>
+                  👥 {viewerCount} viewers
+                </span>
+              )}
+            </div>
+          </>
         ) : (
-          <div className="live-stream-error">
-            Missing <code>streamId</code> in URL.
-          </div>
-        )}
-        {!shop && (
-          <div className="live-stream-error">
-            Missing <code>shop</code> parameter in URL.
-          </div>
-        )}
-        {!idsParam && (
-          <div className="live-stream-error">
-            Missing <code>ids</code> parameter in URL.
-          </div>
+          <div className="live-stream-error">Missing streamId parameter</div>
         )}
       </header>
 
-      {/* Two Column Layout: Live Stream + Chat */}
       <div className="live-stream-two-columns">
-        {/* Left Column: Live Stream Video */}
+        {/* Video Column */}
         <div className="live-stream-video-column">
           <div className="live-stream-iframe-wrapper">
-            <iframe
-              src="https://embed.api.video/live/li40wqrTDScsJm4f5xT1qK2m"
-              width="100%"
-              height="100%"
-              frameBorder="0"
-              scrolling="no"
-              allowFullScreen={true}
-              title="Live stream"
-              className="live-stream-iframe"
-              style={{ minHeight: "500px" }}
-            ></iframe>
+            <video
+              ref={videoRef}
+              className="video-js vjs-default-skin vjs-big-play-centered"
+              style={{ width: '100%', height: '100%', minHeight: '500px' }}
+            >
+              <p className="vjs-no-js">
+                Please enable JavaScript to view this video.
+              </p>
+            </video>
           </div>
         </div>
 
-        {/* Right Column: Chat Box */}
+        {/* Chat Column */}
         <div className="live-stream-chat-column">
           <div className="live-stream-chat-header">
-            <h2 className="live-stream-chat-title">
+            <h2>
               Live Chat
               {isConnected && (
-                <span className="live-stream-chat-status live-stream-chat-status-connected">
-                  ● Connected
-                </span>
+                <span className="live-stream-chat-status-connected"> ● Connected</span>
               )}
               {!isConnected && clientId && (
-                <span className="live-stream-chat-status live-stream-chat-status-connecting">
-                  ● Connecting...
-                </span>
+                <span className="live-stream-chat-status-connecting"> ● Connecting...</span>
               )}
             </h2>
           </div>
 
           <div className="live-stream-chat-messages">
             {messages.length === 0 ? (
-              <p
-                style={{
-                  color: "#777",
-                  margin: 0,
-                  textAlign: "center",
-                  padding: "20px",
-                }}
-              >
+              <p style={{ textAlign: "center", padding: "20px", color: "#777" }}>
                 No messages yet. Be the first to chat!
               </p>
             ) : (
               messages.map((msg) => (
                 <div
                   key={msg.id}
-                  className={`live-stream-chat-message ${
-                    msg.isPending ? "live-stream-chat-message-pending" : ""
-                  } ${
-                    msg.clientId === clientId
-                      ? "live-stream-chat-message-own"
-                      : ""
-                  }`}
+                  className={`live-stream-chat-message ${msg.clientId === clientId ? 'live-stream-chat-message-own' : ''}`}
                 >
-                  <span
-                    className={`live-stream-chat-author ${
-                      msg.clientId === clientId
-                        ? "live-stream-chat-author-own"
-                        : ""
-                    }`}
-                  >
+                  <span className="live-stream-chat-author">
                     {msg.author || "Viewer"}:
                   </span>
                   <span>{msg.text}</span>
-                  {msg.isPending && (
-                    <span className="live-stream-chat-pending">
-                      (sending...)
-                    </span>
-                  )}
                   <span className="live-stream-chat-time">
-                    {msg.timestamp
-                      ? new Date(msg.timestamp).toLocaleTimeString()
-                      : ""}
+                    {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : ""}
                   </span>
                 </div>
               ))
@@ -560,9 +514,7 @@ export default function ViewerstreamPage() {
             <input
               type="text"
               className="live-stream-chat-input"
-              placeholder={
-                isConnected ? "Type your message..." : "Connecting to chat..."
-              }
+              placeholder={isConnected ? "Type your message..." : "Connecting to chat..."}
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               disabled={!isConnected}
@@ -578,212 +530,93 @@ export default function ViewerstreamPage() {
         </div>
       </div>
 
-      {/* Error Messages */}
       {error && <div className="live-stream-error">{error}</div>}
-      {chatError && (
-        <div className="live-stream-warning">⚠️ {chatError}</div>
-      )}
+      {chatError && <div className="live-stream-warning">⚠️ {chatError}</div>}
 
-      {/* Products Section - Full Width */}
-      {loadingProducts && (
-        <div className="live-stream-loading">
-          Loading products for this stream…
-        </div>
-      )}
+      {/* Products Section */}
+      {loadingProducts && <div className="live-stream-loading">Loading products...</div>}
 
       {!loadingProducts && !error && products.length === 0 && (
-        <div className="live-stream-info">
-          No products found for this stream. Check the <code>ids</code> param.
-        </div>
+        <div className="live-stream-info">No products found for this stream.</div>
       )}
 
       {!loadingProducts && products.length > 0 && (
         <section className="live-stream-products-section">
           <div className="live-stream-products-header">
-            <h2 className="live-stream-section-title">
-              Products in this stream
-            </h2>
-            <button
-              type="button"
-              className="live-stream-cart-toggle-button"
-              onClick={() => setIsCartOpen(true)}
-            >
+            <h2>Products in this stream</h2>
+            <button className="live-stream-cart-toggle-button" onClick={() => setIsCartOpen(true)}>
               Cart ({cartItems.length})
             </button>
           </div>
 
-          <div className="live-stream-products-grid-full">
+          <div className="live-stream-products-grid">
             {products.map((product) => {
               const selectedVariant = selectedVariants[product.id];
               const image = selectedVariant?.image || product.featuredImage;
-              const price =
-                selectedVariant?.price ??
-                product.priceRangeV2?.minVariantPrice;
-              const currencyCode =
-                product.priceRangeV2?.minVariantPrice?.currencyCode ||
-                undefined;
+              const price = selectedVariant?.price ?? product.priceRangeV2?.minVariantPrice;
               const isAvailable = selectedVariant?.availableForSale !== false;
-              const productUrl = getProductUrl(product, selectedVariant);
               const quantity = quantities[product.id] ?? 1;
 
               return (
-                <article
-                  key={product.id}
-                  className="live-stream-product-card-full"
-                >
+                <article key={product.id} className="live-stream-product-card">
                   <div className="live-stream-product-image-wrapper">
                     {image ? (
-                      <a
-                        href={productUrl || "#"}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <img
-                          src={image.url}
-                          alt={image.altText || product.title}
-                          className="live-stream-product-image-full"
-                        />
-                      </a>
+                      <img src={image.url} alt={image.altText || product.title} />
                     ) : (
-                      <div className="live-stream-product-image-placeholder-full">
-                        No image
-                      </div>
+                      <div className="live-stream-product-image-placeholder">No image</div>
                     )}
                   </div>
 
-                  <div className="live-stream-product-details-full">
-                    <h3 className="live-stream-product-name-full">
-                      <a
-                        href={productUrl || "#"}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {product.title}
-                      </a>
-                    </h3>
-
-                    <p className="live-stream-product-meta-full">
-                      {product.handle}
-                      {product.status ? ` – ${product.status}` : ""}
-                    </p>
-
+                  <div className="live-stream-product-details">
+                    <h3>{product.title}</h3>
+                    
                     {/* Variant Options */}
                     {product.options && product.options.length > 0 && (
-                      <div className="live-stream-variant-options-full">
+                      <div className="live-stream-variant-options">
                         {product.options.map((option) => {
                           const currentVariant = selectedVariants[product.id];
-                          const currentValue =
-                            currentVariant?.selectedOptions?.find(
-                              (opt) => opt.name === option.name,
-                            )?.value || option.values[0];
+                          const currentValue = currentVariant?.selectedOptions?.find(
+                            (opt) => opt.name === option.name
+                          )?.value || option.values[0];
 
                           return (
-                            <div
-                              key={option.id}
-                              className="live-stream-variant-option-full"
-                            >
-                              <label className="live-stream-variant-label-full">
-                                {option.name}:
-                              </label>
+                            <div key={option.id} className="live-stream-variant-option">
+                              <label>{option.name}:</label>
                               <select
-                                className="live-stream-variant-select-full"
                                 value={currentValue}
                                 onChange={(e) => {
                                   const newValue = e.target.value;
-                                  const currentVariant =
-                                    selectedVariants[product.id];
+                                  const currentVariant = selectedVariants[product.id];
+                                  
+                                  const desiredOptions = product.options.map((optDef) => {
+                                    if (optDef.name === option.name) {
+                                      return { name: optDef.name, value: newValue };
+                                    }
+                                    const currentOptValue = currentVariant?.selectedOptions?.find(
+                                      (o) => o.name === optDef.name
+                                    )?.value || optDef.values[0];
+                                    return { name: optDef.name, value: currentOptValue };
+                                  });
 
-                                  const desiredOptions = product.options.map(
-                                    (optDef) => {
-                                      if (optDef.name === option.name) {
-                                        return {
-                                          name: optDef.name,
-                                          value: newValue,
-                                        };
-                                      }
-                                      const currentOptValue =
-                                        currentVariant?.selectedOptions?.find(
-                                          (o) => o.name === optDef.name,
-                                        )?.value || optDef.values[0];
-                                      return {
-                                        name: optDef.name,
-                                        value: currentOptValue,
-                                      };
-                                    },
-                                  );
-
-                                  const newVariant = product.variants?.find(
-                                    (v) => {
-                                      if (!v.selectedOptions) return false;
-                                      return desiredOptions.every(
-                                        (desiredOpt) =>
-                                          v.selectedOptions.some(
-                                            (opt) =>
-                                              opt.name === desiredOpt.name &&
-                                              opt.value === desiredOpt.value,
-                                          ),
-                                      );
-                                    },
-                                  );
+                                  const newVariant = product.variants?.find((v) => {
+                                    if (!v.selectedOptions) return false;
+                                    return desiredOptions.every((desiredOpt) =>
+                                      v.selectedOptions.some(
+                                        (opt) => opt.name === desiredOpt.name && opt.value === desiredOpt.value
+                                      )
+                                    );
+                                  });
 
                                   if (newVariant) {
-                                    handleVariantChange(
-                                      product.id,
-                                      newVariant.id,
-                                    );
+                                    handleVariantChange(product.id, newVariant.id);
                                   }
                                 }}
                               >
-                                {option.values.map((value) => {
-                                  const currentVariant =
-                                    selectedVariants[product.id];
-                                  const desiredOptionsForThisValue =
-                                    product.options.map((optDef) => {
-                                      if (optDef.name === option.name) {
-                                        return {
-                                          name: optDef.name,
-                                          value: value,
-                                        };
-                                      }
-                                      const currentOptValue =
-                                        currentVariant?.selectedOptions?.find(
-                                          (o) => o.name === optDef.name,
-                                        )?.value || optDef.values[0];
-                                      return {
-                                        name: optDef.name,
-                                        value: currentOptValue,
-                                      };
-                                    });
-
-                                  const variantForValue = product.variants?.find(
-                                    (v) => {
-                                      if (!v.selectedOptions) return false;
-                                      return desiredOptionsForThisValue.every(
-                                        (desiredOpt) =>
-                                          v.selectedOptions.some(
-                                            (opt) =>
-                                              opt.name === desiredOpt.name &&
-                                              opt.value === desiredOpt.value,
-                                          ),
-                                      );
-                                    },
-                                  );
-
-                                  return (
-                                    <option
-                                      key={value}
-                                      value={value}
-                                      disabled={
-                                        !variantForValue?.availableForSale
-                                      }
-                                    >
-                                      {value}{" "}
-                                      {!variantForValue?.availableForSale
-                                        ? "(Sold Out)"
-                                        : ""}
-                                    </option>
-                                  );
-                                })}
+                                {option.values.map((value) => (
+                                  <option key={value} value={value}>
+                                    {value}
+                                  </option>
+                                ))}
                               </select>
                             </div>
                           );
@@ -791,70 +624,37 @@ export default function ViewerstreamPage() {
                       </div>
                     )}
 
-                    {/* Price */}
-                    <p className="live-stream-product-price-full">
-                      Price: {formatPrice(price, currencyCode)}
-                      {!isAvailable && (
-                        <span className="live-stream-sold-out-full">
-                          {" "}
-                          (Sold Out)
-                        </span>
-                      )}
+                    <p className="live-stream-product-price">
+                      Price: {formatPrice(price, product.priceRangeV2?.minVariantPrice?.currencyCode)}
                     </p>
 
-                    {/* Quantity Selector */}
-                   {/* Replace the existing Add to Cart button section with this enhanced version */}
-<div className="live-stream-button-group-full">
-  <div className="live-stream-quantity-wrapper-full">
-    <label className="live-stream-quantity-label-full" htmlFor={`qty-${product.id}`}>
-      Quantity
-    </label>
-    <div className="live-stream-quantity-controls">
-      <button 
-        type="button"
-        className="live-stream-quantity-btn"
-        onClick={() => handleQuantityChange(product.id, quantity - 1)}
-        disabled={!isAvailable || quantity <= 1}
-      >
-        −
-      </button>
-      <input
-        id={`qty-${product.id}`}
-        type="number"
-        min="1"
-        step="1"
-        className="live-stream-quantity-input-full"
-        value={quantity}
-        onChange={(e) => handleQuantityChange(product.id, e.target.value)}
-        disabled={!isAvailable}
-      />
-      <button 
-        type="button"
-        className="live-stream-quantity-btn"
-        onClick={() => handleQuantityChange(product.id, quantity + 1)}
-        disabled={!isAvailable}
-      >
-        +
-      </button>
-    </div>
-  </div>
+                    <div className="live-stream-button-group">
+                      <div className="live-stream-quantity-wrapper">
+                        <label>Quantity:</label>
+                        <div className="live-stream-quantity-controls">
+                          <button onClick={() => handleQuantityChange(product.id, quantity - 1)} disabled={quantity <= 1}>
+                            -
+                          </button>
+                          <input
+                            type="number"
+                            min="1"
+                            value={quantity}
+                            onChange={(e) => handleQuantityChange(product.id, e.target.value)}
+                          />
+                          <button onClick={() => handleQuantityChange(product.id, quantity + 1)}>
+                            +
+                          </button>
+                        </div>
+                      </div>
 
-  <button
-    type="button"
-    className={`live-stream-buy-button-full ${!isAvailable ? 'disabled' : ''}`}
-    onClick={() => handleAddToCart(product.id)}
-    disabled={!isAvailable}
-  >
-    {isAvailable ? (
-      <>
-        <span className="button-text">Add to Cart</span>
-        <span className="button-icon">→</span>
-      </>
-    ) : (
-      'Sold Out'
-    )}
-  </button>
-</div>
+                      <button
+                        className={`live-stream-buy-button ${!isAvailable ? 'disabled' : ''}`}
+                        onClick={() => handleAddToCart(product.id)}
+                        disabled={!isAvailable}
+                      >
+                        {isAvailable ? 'Add to Cart' : 'Sold Out'}
+                      </button>
+                    </div>
                   </div>
                 </article>
               );
@@ -866,66 +666,35 @@ export default function ViewerstreamPage() {
       {/* Cart Sidebar */}
       {isCartOpen && (
         <div className="live-stream-cart-overlay" onClick={() => setIsCartOpen(false)}>
-          <div
-            className="live-stream-cart-sidebar"
-            onClick={(e) => e.stopPropagation()} // prevent closing when clicking inside
-          >
+          <div className="live-stream-cart-sidebar" onClick={(e) => e.stopPropagation()}>
             <div className="live-stream-cart-header">
               <h3>Your Cart</h3>
-              <button
-                type="button"
-                className="live-stream-cart-close-button"
-                onClick={() => setIsCartOpen(false)}
-              >
-                ✕
-              </button>
+              <button onClick={() => setIsCartOpen(false)}>✕</button>
             </div>
 
             {cartItems.length === 0 ? (
-              <div className="live-stream-cart-empty">
-                Your cart is empty.
-              </div>
+              <div className="live-stream-cart-empty">Your cart is empty.</div>
             ) : (
               <>
                 <div className="live-stream-cart-items">
                   {cartItems.map((item) => (
-                    <div
-                      key={item.variantId}
-                      className="live-stream-cart-item"
-                    >
+                    <div key={item.variantId} className="live-stream-cart-item">
                       <div className="live-stream-cart-item-image">
                         {item.image ? (
-                          <img
-                            src={item.image.url}
-                            alt={item.image.altText || item.productTitle}
-                          />
+                          <img src={item.image.url} alt={item.productTitle} />
                         ) : (
-                          <div className="live-stream-cart-item-image-placeholder">
-                            No image
-                          </div>
+                          <div>No image</div>
                         )}
                       </div>
                       <div className="live-stream-cart-item-details">
-                        <div className="live-stream-cart-item-title">
-                          {item.productTitle}
-                        </div>
-                        <div className="live-stream-cart-item-variant">
-                          {item.variantTitle}
-                        </div>
+                        <div className="live-stream-cart-item-title">{item.productTitle}</div>
+                        <div className="live-stream-cart-item-variant">{item.variantTitle}</div>
                         <div className="live-stream-cart-item-meta">
-                          <span>
-                            {formatPrice(item.price, item.currencyCode)}
-                          </span>
+                          <span>{formatPrice(item.price, item.currencyCode)}</span>
                           <span>× {item.quantity}</span>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        className="live-stream-cart-item-remove"
-                        onClick={() => handleRemoveCartItem(item.variantId)}
-                      >
-                        Remove
-                      </button>
+                      <button onClick={() => handleRemoveCartItem(item.variantId)}>Remove</button>
                     </div>
                   ))}
                 </div>
@@ -935,11 +704,7 @@ export default function ViewerstreamPage() {
                     <span>Total:</span>
                     <span>{getCartTotal() || "-"}</span>
                   </div>
-                  <button
-                    type="button"
-                    className="live-stream-cart-checkout-button"
-                    onClick={handleCheckout}
-                  >
+                  <button className="live-stream-cart-checkout-button" onClick={handleCheckout}>
                     Checkout
                   </button>
                 </div>
