@@ -803,45 +803,58 @@ export default function ViewerstreamPage() {
                     </p>
 
                     {/* Quantity Selector */}
-                    <div className="live-stream-quantity-wrapper-full">
-                      <label
-                        className="live-stream-quantity-label-full"
-                        htmlFor={`qty-${product.id}`}
-                      >
-                        Quantity:
-                      </label>
-                      <input
-                        id={`qty-${product.id}`}
-                        type="number"
-                        min="1"
-                        step="1"
-                        className="live-stream-quantity-input-full"
-                        value={quantity}
-                        onChange={(e) =>
-                          handleQuantityChange(product.id, e.target.value)
-                        }
-                        onBlur={(e) => {
-                          // normalize on blur
-                          if (
-                            !e.target.value ||
-                            parseInt(e.target.value, 10) < 1
-                          ) {
-                            handleQuantityChange(product.id, 1);
-                          }
-                        }}
-                        disabled={!isAvailable}
-                      />
-                    </div>
+                   {/* Replace the existing Add to Cart button section with this enhanced version */}
+<div className="live-stream-button-group-full">
+  <div className="live-stream-quantity-wrapper-full">
+    <label className="live-stream-quantity-label-full" htmlFor={`qty-${product.id}`}>
+      Quantity
+    </label>
+    <div className="live-stream-quantity-controls">
+      <button 
+        type="button"
+        className="live-stream-quantity-btn"
+        onClick={() => handleQuantityChange(product.id, quantity - 1)}
+        disabled={!isAvailable || quantity <= 1}
+      >
+        −
+      </button>
+      <input
+        id={`qty-${product.id}`}
+        type="number"
+        min="1"
+        step="1"
+        className="live-stream-quantity-input-full"
+        value={quantity}
+        onChange={(e) => handleQuantityChange(product.id, e.target.value)}
+        disabled={!isAvailable}
+      />
+      <button 
+        type="button"
+        className="live-stream-quantity-btn"
+        onClick={() => handleQuantityChange(product.id, quantity + 1)}
+        disabled={!isAvailable}
+      >
+        +
+      </button>
+    </div>
+  </div>
 
-                    {/* Add to Cart Button (no direct checkout) */}
-                    <button
-                      type="button"
-                      className="live-stream-buy-button-full"
-                      onClick={() => handleAddToCart(product.id)}
-                      disabled={!isAvailable}
-                    >
-                      {isAvailable ? "Add to cart" : "Sold Out"}
-                    </button>
+  <button
+    type="button"
+    className={`live-stream-buy-button-full ${!isAvailable ? 'disabled' : ''}`}
+    onClick={() => handleAddToCart(product.id)}
+    disabled={!isAvailable}
+  >
+    {isAvailable ? (
+      <>
+        <span className="button-text">Add to Cart</span>
+        <span className="button-icon">→</span>
+      </>
+    ) : (
+      'Sold Out'
+    )}
+  </button>
+</div>
                   </div>
                 </article>
               );
