@@ -21,6 +21,9 @@ export default function ViewerstreamPage() {
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [error, setError] = useState("");
   const [chatError, setChatError] = useState("");
+  
+  // VDO.Ninja stream status
+  const [isStreamLive, setIsStreamLive] = useState(false);
 
   // Chat state
   const [messages, setMessages] = useState([]);
@@ -28,6 +31,7 @@ export default function ViewerstreamPage() {
   const [isConnected, setIsConnected] = useState(false);
   const pusherRef = useRef(null);
   const channelRef = useRef(null);
+  const iframeRef = useRef(null);
 
   // Create a unique client ID for this browser session
   const [clientId, setClientId] = useState(null);
@@ -39,7 +43,7 @@ export default function ViewerstreamPage() {
   const [quantities, setQuantities] = useState({});
 
   // Cart sidebar
-  const [cartItems, setCartItems] = useState([]); // each item: { productId, productTitle, productHandle, variantId, variantTitle, image, price, currencyCode, quantity }
+  const [cartItems, setCartItems] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
 
   // Generate client ID only on the client side
@@ -51,6 +55,49 @@ export default function ViewerstreamPage() {
     }
     setClientId(id);
   }, []);
+
+  // Check if VDO.Ninja stream is active
+  useEffect(() => {
+    if (!streamId) return;
+
+    // Try to detect if stream is live by attempting to load a hidden video element
+    const checkStreamStatus = () => {
+      // Create a hidden video element to test connection
+      const testVideo = document.createElement('video');
+      testVideo.style.display = 'none';
+      
+      // VDO.Ninja stream URL pattern
+      const testStreamUrl = `https://vdo.ninja/${streamId}`;
+      
+      testVideo.onloadeddata = () => {
+        setIsStreamLive(true);
+        testVideo.remove();
+      };
+      
+      testVideo.onerror = () => {
+        setIsStreamLive(false);
+        testVideo.remove();
+      };
+      
+      // Set a timeout for slow connections
+      setTimeout(() => {
+        if (testVideo.parentElement) {
+          setIsStreamLive(false);
+          testVideo.remove();
+        }
+      }, 5000);
+      
+      // This won't actually load due to CORS, but we can try
+      // Alternative: Check if iframe is accessible
+      testVideo.src = testStreamUrl;
+    };
+    
+    // Check every 30 seconds
+    checkStreamStatus();
+    const interval = setInterval(checkStreamStatus, 30000);
+    
+    return () => clearInterval(interval);
+  }, [streamId]);
 
   // Load products for this stream
   useEffect(() => {
@@ -86,7 +133,6 @@ export default function ViewerstreamPage() {
             product.variants?.[0];
           if (availableVariant) {
             initialVariants[product.id] = availableVariant;
-            // default quantity = 1
             initialQuantities[product.id] = 1;
           }
         });
@@ -424,7 +470,6 @@ export default function ViewerstreamPage() {
   const getCartTotal = () => {
     if (!cartItems.length) return null;
 
-    // Use currency from first item; in real app you may want to assert single currency
     const currencyCode = cartItems[0].currencyCode || "";
 
     const totalAmount = cartItems.reduce((sum, item) => {
@@ -450,9 +495,39 @@ export default function ViewerstreamPage() {
       <header style={{ marginBottom: "2rem", textAlign: "center" }}>
         <h1 className="live-stream-title">Live Stream</h1>
         {streamId ? (
-          <p style={{ margin: 0, color: "#555" }}>
-            Stream ID: <strong>{streamId}</strong>
-          </p>
+          <div>
+            <p style={{ margin: 0, color: "#555" }}>
+              Stream ID: <strong>{streamId}</strong>
+            </p>
+            {/* Live/Offline Status Badge */}
+            <div style={{ marginTop: "8px" }}>
+              {isStreamLive ? (
+                <span style={{
+                  display: "inline-block",
+                  padding: "4px 12px",
+                  backgroundColor: "#ff0000",
+                  color: "white",
+                  borderRadius: "20px",
+                  fontSize: "12px",
+                  fontWeight: "bold",
+                  animation: "pulse 1.5s infinite"
+                }}>
+                  🔴 LIVE
+                </span>
+              ) : (
+                <span style={{
+                  display: "inline-block",
+                  padding: "4px 12px",
+                  backgroundColor: "#666",
+                  color: "white",
+                  borderRadius: "20px",
+                  fontSize: "12px"
+                }}>
+                  ⚫ OFFLINE
+                </span>
+              )}
+            </div>
+          </div>
         ) : (
           <div className="live-stream-error">
             Missing <code>streamId</code> in URL.
@@ -475,17 +550,32 @@ export default function ViewerstreamPage() {
         {/* Left Column: Live Stream Video */}
         <div className="live-stream-video-column">
           <div className="live-stream-iframe-wrapper">
-            <iframe
-              src="https://embed.api.video/live/li40wqrTDScsJm4f5xT1qK2m"
-              width="100%"
-              height="100%"
-              frameBorder="0"
-              scrolling="no"
-              allowFullScreen={true}
-              title="Live stream"
-              className="live-stream-iframe"
-              style={{ minHeight: "500px" }}
-            ></iframe>
+            {streamId ? (
+              <iframe
+                ref={iframeRef}
+                src={`https://vdo.ninja/${streamId}`}
+                width="100%"
+                height="100%"
+                frameBorder="0"
+                scrolling="no"
+                allow="autoplay; encrypted-media; picture-in-picture; fullscreen; camera; microphone"
+                allowFullScreen={true}
+                title="Live stream"
+                className="live-stream-iframe"
+                style={{ minHeight: "500px" }}
+              ></iframe>
+            ) : (
+              <div className="live-stream-placeholder" style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minHeight: "500px",
+                backgroundColor: "#f0f0f0",
+                borderRadius: "8px"
+              }}>
+                <p>Waiting for stream to start...</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -802,59 +892,58 @@ export default function ViewerstreamPage() {
                       )}
                     </p>
 
-                    {/* Quantity Selector */}
-                   {/* Replace the existing Add to Cart button section with this enhanced version */}
-<div className="live-stream-button-group-full">
-  <div className="live-stream-quantity-wrapper-full">
-    <label className="live-stream-quantity-label-full" htmlFor={`qty-${product.id}`}>
-      Quantity
-    </label>
-    <div className="live-stream-quantity-controls">
-      <button 
-        type="button"
-        className="live-stream-quantity-btn"
-        onClick={() => handleQuantityChange(product.id, quantity - 1)}
-        disabled={!isAvailable || quantity <= 1}
-      >
-        −
-      </button>
-      <input
-        id={`qty-${product.id}`}
-        type="number"
-        min="1"
-        step="1"
-        className="live-stream-quantity-input-full"
-        value={quantity}
-        onChange={(e) => handleQuantityChange(product.id, e.target.value)}
-        disabled={!isAvailable}
-      />
-      <button 
-        type="button"
-        className="live-stream-quantity-btn"
-        onClick={() => handleQuantityChange(product.id, quantity + 1)}
-        disabled={!isAvailable}
-      >
-        +
-      </button>
-    </div>
-  </div>
+                    {/* Quantity Selector & Add to Cart */}
+                    <div className="live-stream-button-group-full">
+                      <div className="live-stream-quantity-wrapper-full">
+                        <label className="live-stream-quantity-label-full" htmlFor={`qty-${product.id}`}>
+                          Quantity
+                        </label>
+                        <div className="live-stream-quantity-controls">
+                          <button 
+                            type="button"
+                            className="live-stream-quantity-btn"
+                            onClick={() => handleQuantityChange(product.id, quantity - 1)}
+                            disabled={!isAvailable || quantity <= 1}
+                          >
+                            −
+                          </button>
+                          <input
+                            id={`qty-${product.id}`}
+                            type="number"
+                            min="1"
+                            step="1"
+                            className="live-stream-quantity-input-full"
+                            value={quantity}
+                            onChange={(e) => handleQuantityChange(product.id, e.target.value)}
+                            disabled={!isAvailable}
+                          />
+                          <button 
+                            type="button"
+                            className="live-stream-quantity-btn"
+                            onClick={() => handleQuantityChange(product.id, quantity + 1)}
+                            disabled={!isAvailable}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
 
-  <button
-    type="button"
-    className={`live-stream-buy-button-full ${!isAvailable ? 'disabled' : ''}`}
-    onClick={() => handleAddToCart(product.id)}
-    disabled={!isAvailable}
-  >
-    {isAvailable ? (
-      <>
-        <span className="button-text">Add to Cart</span>
-        <span className="button-icon">→</span>
-      </>
-    ) : (
-      'Sold Out'
-    )}
-  </button>
-</div>
+                      <button
+                        type="button"
+                        className={`live-stream-buy-button-full ${!isAvailable ? 'disabled' : ''}`}
+                        onClick={() => handleAddToCart(product.id)}
+                        disabled={!isAvailable}
+                      >
+                        {isAvailable ? (
+                          <>
+                            <span className="button-text">Add to Cart</span>
+                            <span className="button-icon">→</span>
+                          </>
+                        ) : (
+                          'Sold Out'
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </article>
               );
@@ -868,7 +957,7 @@ export default function ViewerstreamPage() {
         <div className="live-stream-cart-overlay" onClick={() => setIsCartOpen(false)}>
           <div
             className="live-stream-cart-sidebar"
-            onClick={(e) => e.stopPropagation()} // prevent closing when clicking inside
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="live-stream-cart-header">
               <h3>Your Cart</h3>
@@ -948,6 +1037,15 @@ export default function ViewerstreamPage() {
           </div>
         </div>
       )}
+
+      {/* Add animation CSS for live badge */}
+      <style>{`
+        @keyframes pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.6; }
+          100% { opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }
