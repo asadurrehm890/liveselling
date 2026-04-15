@@ -78,19 +78,20 @@ export default function SellerLiveStream() {
 
   // Copy OBS Broadcast Link
   const copyBroadcastLink = () => {
-    if (!streamId.trim()) {
-      shopify.toast.show("Please enter a Stream ID first", { isError: true });
-      return;
-    }
-    
-    const broadcastLink = `https://vdo.ninja/${streamId}`;
-    navigator.clipboard.writeText(broadcastLink);
-    
-    setShowCopiedFeedback(true);
-    shopify.toast.show("Broadcast link copied! Use in OBS as Browser Source");
-    
-    setTimeout(() => setShowCopiedFeedback(false), 3000);
-  };
+  if (!streamId.trim()) {
+    shopify.toast.show("Please enter a Stream ID first", { isError: true });
+    return;
+  }
+  
+  // IMPORTANT: Add ?room parameter to auto-join without menu
+  const broadcastLink = `https://vdo.ninja/${streamId}?room=${streamId}`;
+  navigator.clipboard.writeText(broadcastLink);
+  
+  setShowCopiedFeedback(true);
+  shopify.toast.show("Broadcast link copied! Use in OBS as Browser Source");
+  
+  setTimeout(() => setShowCopiedFeedback(false), 3000);
+};
 
   // Copy Viewer Link
   const copyViewerLink = () => {
@@ -299,7 +300,7 @@ export default function SellerLiveStream() {
                       overflow: "auto",
                       wordBreak: "break-all"
                     }}>
-                      https://vdo.ninja/{streamId}
+                      https://vdo.ninja/{streamId}?room={streamId} 
                     </code>
                     <s-button onClick={copyBroadcastLink} variant="tertiary">
                       {showCopiedFeedback ? "✓ Copied!" : "Copy Link"}
