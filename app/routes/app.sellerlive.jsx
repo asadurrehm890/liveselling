@@ -300,7 +300,7 @@ export default function SellerLiveStream() {
                       overflow: "auto",
                       wordBreak: "break-all"
                     }}>
-                      https://vdo.ninja/?push=${streamId}&webcam&quality=1080p&bitrate=3000
+                      https://vdo.ninja/?push={{streamId}}&webcam&quality=1080p&bitrate=3000
                     </code>
                     <s-button onClick={copyBroadcastLink} variant="tertiary">
                       {showCopiedFeedback ? "✓ Copied!" : "Copy Link"}
