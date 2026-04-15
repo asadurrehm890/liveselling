@@ -84,7 +84,7 @@ export default function SellerLiveStream() {
   }
   
   // IMPORTANT: Add ?room parameter to auto-join without menu
-  const broadcastLink = `https://vdo.ninja/${streamId}?room=${streamId}`;
+  const broadcastLink = `https://vdo.ninja/?push=${streamId}&webcam&quality=1080p&bitrate=3000`;
   navigator.clipboard.writeText(broadcastLink);
   
   setShowCopiedFeedback(true);
@@ -300,7 +300,7 @@ export default function SellerLiveStream() {
                       overflow: "auto",
                       wordBreak: "break-all"
                     }}>
-                      https://vdo.ninja/{streamId}?room={streamId} 
+                      https://vdo.ninja/?push=${streamId}&webcam&quality=1080p&bitrate=3000
                     </code>
                     <s-button onClick={copyBroadcastLink} variant="tertiary">
                       {showCopiedFeedback ? "✓ Copied!" : "Copy Link"}
