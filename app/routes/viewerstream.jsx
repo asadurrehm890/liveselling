@@ -24,6 +24,7 @@ export default function ViewerstreamPage() {
   
   // VDO.Ninja stream status
   const [isStreamLive, setIsStreamLive] = useState(false);
+  const [checkingStream, setCheckingStream] = useState(true);
 
   // Chat state
   const [messages, setMessages] = useState([]);
@@ -32,6 +33,7 @@ export default function ViewerstreamPage() {
   const pusherRef = useRef(null);
   const channelRef = useRef(null);
   const iframeRef = useRef(null);
+  const videoElementRef = useRef(null);
 
   // Create a unique client ID for this browser session
   const [clientId, setClientId] = useState(null);
@@ -56,48 +58,118 @@ export default function ViewerstreamPage() {
     setClientId(id);
   }, []);
 
-  // Check if VDO.Ninja stream is active
+  // Check if VDO.Ninja stream is active using multiple methods
   useEffect(() => {
-    if (!streamId) return;
+    if (!streamId) {
+      setCheckingStream(false);
+      return;
+    }
 
-    // Try to detect if stream is live by attempting to load a hidden video element
+    let checkInterval;
+    let retryCount = 0;
+    const maxRetries = 3;
+
     const checkStreamStatus = () => {
-      // Create a hidden video element to test connection
-      const testVideo = document.createElement('video');
-      testVideo.style.display = 'none';
+      // Method 1: Try to load a small image from VDO.Ninja (most reliable)
+      const img = new Image();
+      const imgUrl = `https://vdo.ninja/${streamId}/favicon.ico?t=${Date.now()}`;
       
-      // VDO.Ninja stream URL pattern
-      const testStreamUrl = `https://vdo.ninja/${streamId}`;
+      let timeoutId;
       
-      testVideo.onloadeddata = () => {
+      const cleanup = () => {
+        if (timeoutId) clearTimeout(timeoutId);
+        img.onload = null;
+        img.onerror = null;
+      };
+      
+      img.onload = () => {
+        // Image loaded - stream might be active
+        cleanup();
         setIsStreamLive(true);
-        testVideo.remove();
+        setCheckingStream(false);
       };
       
-      testVideo.onerror = () => {
-        setIsStreamLive(false);
-        testVideo.remove();
-      };
-      
-      // Set a timeout for slow connections
-      setTimeout(() => {
-        if (testVideo.parentElement) {
-          setIsStreamLive(false);
-          testVideo.remove();
+      img.onerror = () => {
+        cleanup();
+        
+        // Method 2: Check if iframe has loaded content
+        if (iframeRef.current) {
+          try {
+            // Try to access iframe content (might fail due to CORS)
+            const iframeDoc = iframeRef.current.contentDocument || iframeRef.current.contentWindow?.document;
+            if (iframeDoc && iframeDoc.readyState === 'complete') {
+              // Iframe loaded, likely stream is active
+              setIsStreamLive(true);
+              setCheckingStream(false);
+              return;
+            }
+          } catch (e) {
+            // CORS error means iframe loaded but can't access - that's good!
+            setIsStreamLive(true);
+            setCheckingStream(false);
+            return;
+          }
         }
-      }, 5000);
+        
+        // Method 3: Check video element metadata
+        if (videoElementRef.current) {
+          const video = videoElementRef.current;
+          if (video.readyState >= 2) { // HAVE_CURRENT_DATA or more
+            setIsStreamLive(true);
+            setCheckingStream(false);
+            return;
+          }
+        }
+        
+        // If all methods failed, stream might be offline
+        if (retryCount < maxRetries) {
+          retryCount++;
+          // Retry after delay
+          setTimeout(checkStreamStatus, 2000);
+        } else {
+          setIsStreamLive(false);
+          setCheckingStream(false);
+        }
+      };
       
-      // This won't actually load due to CORS, but we can try
-      // Alternative: Check if iframe is accessible
-      testVideo.src = testStreamUrl;
+      timeoutId = setTimeout(() => {
+        img.onerror(new Error('Timeout'));
+      }, 3000);
+      
+      img.src = imgUrl;
     };
     
-    // Check every 30 seconds
+    // Initial check
     checkStreamStatus();
-    const interval = setInterval(checkStreamStatus, 30000);
     
-    return () => clearInterval(interval);
+    // Check every 15 seconds for status changes
+    checkInterval = setInterval(() => {
+      retryCount = 0;
+      checkStreamStatus();
+    }, 15000);
+    
+    return () => {
+      if (checkInterval) clearInterval(checkInterval);
+    };
   }, [streamId]);
+
+  // Also listen to iframe load events
+  useEffect(() => {
+    if (!iframeRef.current) return;
+    
+    const handleIframeLoad = () => {
+      // If iframe loads, stream is likely active
+      setIsStreamLive(true);
+      setCheckingStream(false);
+    };
+    
+    const iframe = iframeRef.current;
+    iframe.addEventListener('load', handleIframeLoad);
+    
+    return () => {
+      iframe.removeEventListener('load', handleIframeLoad);
+    };
+  }, [iframeRef.current]);
 
   // Load products for this stream
   useEffect(() => {
@@ -501,7 +573,19 @@ export default function ViewerstreamPage() {
             </p>
             {/* Live/Offline Status Badge */}
             <div style={{ marginTop: "8px" }}>
-              {isStreamLive ? (
+              {checkingStream ? (
+                <span style={{
+                  display: "inline-block",
+                  padding: "4px 12px",
+                  backgroundColor: "#ff9800",
+                  color: "white",
+                  borderRadius: "20px",
+                  fontSize: "12px",
+                  fontWeight: "bold",
+                }}>
+                  ⏳ Checking stream...
+                </span>
+              ) : isStreamLive ? (
                 <span style={{
                   display: "inline-block",
                   padding: "4px 12px",
@@ -527,6 +611,19 @@ export default function ViewerstreamPage() {
                 </span>
               )}
             </div>
+            {!isStreamLive && !checkingStream && (
+              <div style={{ 
+                marginTop: "8px", 
+                padding: "8px", 
+                backgroundColor: "#fff3cd", 
+                border: "1px solid #ffeeba",
+                borderRadius: "4px",
+                fontSize: "12px",
+                color: "#856404"
+              }}>
+                💡 The streamer hasn't started broadcasting yet. Check back soon!
+              </div>
+            )}
           </div>
         ) : (
           <div className="live-stream-error">
@@ -551,19 +648,29 @@ export default function ViewerstreamPage() {
         <div className="live-stream-video-column">
           <div className="live-stream-iframe-wrapper">
             {streamId ? (
-              <iframe
-                ref={iframeRef}
-                src={`https://vdo.ninja/?view=${streamId}&cleanoutput&transparent&autoplay&muted`}
-                width="100%"
-                height="100%"
-                frameBorder="0"
-                scrolling="no"
-                allow="autoplay; encrypted-media; picture-in-picture; fullscreen; camera; microphone"
-                allowFullScreen={true}
-                title="Live stream"
-                className="live-stream-iframe"
-                style={{ minHeight: "500px" }}
-              ></iframe>
+              <>
+                <iframe
+                  ref={iframeRef}
+                  src={`https://vdo.ninja/?view=${streamId}&cleanoutput&transparent&autoplay&muted`}
+                  width="100%"
+                  height="100%"
+                  frameBorder="0"
+                  scrolling="no"
+                  allow="autoplay; encrypted-media; picture-in-picture; fullscreen; camera; microphone"
+                  allowFullScreen={true}
+                  title="Live stream"
+                  className="live-stream-iframe"
+                  style={{ minHeight: "500px" }}
+                ></iframe>
+                {/* Hidden video element for additional detection */}
+                <video
+                  ref={videoElementRef}
+                  src={`https://vdo.ninja/${streamId}`}
+                  style={{ display: "none" }}
+                  autoPlay
+                  muted
+                />
+              </>
             ) : (
               <div className="live-stream-placeholder" style={{
                 display: "flex",
