@@ -651,7 +651,7 @@ export default function ViewerstreamPage() {
               <>
                 <iframe
                   ref={iframeRef}
-                  src={`https://vdo.ninja/?view=${streamId}&cleanoutput&transparent&autoplay&muted`}
+                  src={`https://vdo.ninja/?view=${streamId}`}
                   width="100%"
                   height="100%"
                   frameBorder="0"
