@@ -394,49 +394,6 @@ export default function SellerLiveStream() {
           </div>
         </s-card>
 
-        {/* Quick Guide */}
-        <s-card>
-          <s-text variant="headingMd" as="h2">
-            Quick Start Guide
-          </s-text>
-          <s-divider />
-          <div style={{ marginTop: "12px" }}>
-            <s-list>
-              <s-list-item>
-                <strong>1. Enter Stream ID</strong> - Create a unique name for your live stream
-              </s-list-item>
-              <s-list-item>
-                <strong>2. Select Products</strong> - Choose which products to feature
-              </s-list-item>
-              <s-list-item>
-                <strong>3. Click "Start Live Stream"</strong> - Saves to database and opens VDO.Ninja push page
-              </s-list-item>
-              <s-list-item>
-                <strong>4. Grant camera access</strong> - Allow VDO.Ninja to use your camera
-              </s-list-item>
-              <s-list-item>
-                <strong>5. Click "Copy Viewer Link"</strong> - Share with your customers
-              </s-list-item>
-            </s-list>
-          </div>
-        </s-card>
-
-        {/* VDO.Ninja Features */}
-        <s-card>
-          <s-text variant="headingMd" as="h2">
-            Why VDO.Ninja?
-          </s-text>
-          <s-divider />
-          <div style={{ marginTop: "12px" }}>
-            <s-list>
-              <s-list-item>✅ <strong>100% Free</strong> - No subscription or API keys needed</s-list-item>
-              <s-list-item>⚡ <strong>Ultra-low latency</strong> - Under 500ms delay</s-list-item>
-              <s-list-item>🔒 <strong>Peer-to-peer</strong> - Direct connection, no middleman</s-list-item>
-              <s-list-item>🎥 <strong>Works with any camera</strong> - Just grant browser access</s-list-item>
-              <s-list-item>📱 <strong>Mobile friendly</strong> - Works on all devices</s-list-item>
-            </s-list>
-          </div>
-        </s-card>
       </s-page>
     </div>
   );
