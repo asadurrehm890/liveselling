@@ -76,11 +76,53 @@ export default function SellerLiveStream() {
     setStreamId(e.target.value);
   };
 
-  // Button 1: Start Live Stream - Opens VDO.Ninja push URL
-  const startLiveStream = () => {
+  // Button 1: Start Live Stream - Saves to database AND opens VDO.Ninja push URL
+  const startLiveStream = async () => {
     if (!streamId.trim()) {
       shopify.toast.show("Please enter a Stream ID first", { isError: true });
       return;
+    }
+    
+    if (selectedProductIds.length === 0) {
+      shopify.toast.show("Please select at least one product", { isError: true });
+      return;
+    }
+    
+    setIsStarting(true);
+    
+    try {
+      // Save live session to database using your existing API endpoint
+      const response = await fetch("/api/live-sessions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          streamId: streamId.trim(),
+          productIds: selectedProductIds,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Failed to create live session:", errorData);
+        shopify.toast.show(
+          errorData.error || "Could not record live session (stream will still open).",
+          { isError: true },
+        );
+      } else {
+        const data = await response.json();
+        shopify.toast.show(`Live stream "${streamId}" session saved successfully!`);
+        console.log("Live session saved:", data);
+      }
+    } catch (err) {
+      console.error("Error calling /api/live-sessions:", err);
+      shopify.toast.show(
+        "Error recording live session (stream will still open).",
+        { isError: true },
+      );
+    } finally {
+      setIsStarting(false);
     }
     
     // Open VDO.Ninja push URL to start streaming
@@ -108,7 +150,10 @@ export default function SellerLiveStream() {
     )}&streamId=${encodeURIComponent(streamId)}&ids=${encodeURIComponent(idsParam)}`;
     
     navigator.clipboard.writeText(viewerUrl);
+    setShowCopiedFeedback(true);
     shopify.toast.show("Viewer link copied to clipboard!");
+    
+    setTimeout(() => setShowCopiedFeedback(false), 3000);
   };
 
   // Button 3: Clear all live sessions (maintenance)
@@ -309,7 +354,8 @@ export default function SellerLiveStream() {
             <s-button
               onClick={startLiveStream}
               variant="primary"
-              disabled={!streamId.trim()}
+              disabled={!streamId.trim() || selectedProductIds.length === 0}
+              loading={isStarting}
             >
               🎥 Start Live Stream
             </s-button>
@@ -337,7 +383,7 @@ export default function SellerLiveStream() {
           {/* Helper text for buttons */}
           <div style={{ marginTop: "16px", fontSize: "12px", color: "#6b6b6b" }}>
             <p style={{ margin: "4px 0" }}>
-              <strong>🎥 Start Live Stream:</strong> Opens VDO.Ninja push page to begin broadcasting
+              <strong>🎥 Start Live Stream:</strong> Saves session to database and opens VDO.Ninja push page
             </p>
             <p style={{ margin: "4px 0" }}>
               <strong>🔗 Copy Viewer Link:</strong> Share this link with customers to watch and shop
@@ -348,9 +394,49 @@ export default function SellerLiveStream() {
           </div>
         </s-card>
 
-       
+        {/* Quick Guide */}
+        <s-card>
+          <s-text variant="headingMd" as="h2">
+            Quick Start Guide
+          </s-text>
+          <s-divider />
+          <div style={{ marginTop: "12px" }}>
+            <s-list>
+              <s-list-item>
+                <strong>1. Enter Stream ID</strong> - Create a unique name for your live stream
+              </s-list-item>
+              <s-list-item>
+                <strong>2. Select Products</strong> - Choose which products to feature
+              </s-list-item>
+              <s-list-item>
+                <strong>3. Click "Start Live Stream"</strong> - Saves to database and opens VDO.Ninja push page
+              </s-list-item>
+              <s-list-item>
+                <strong>4. Grant camera access</strong> - Allow VDO.Ninja to use your camera
+              </s-list-item>
+              <s-list-item>
+                <strong>5. Click "Copy Viewer Link"</strong> - Share with your customers
+              </s-list-item>
+            </s-list>
+          </div>
+        </s-card>
 
-     
+        {/* VDO.Ninja Features */}
+        <s-card>
+          <s-text variant="headingMd" as="h2">
+            Why VDO.Ninja?
+          </s-text>
+          <s-divider />
+          <div style={{ marginTop: "12px" }}>
+            <s-list>
+              <s-list-item>✅ <strong>100% Free</strong> - No subscription or API keys needed</s-list-item>
+              <s-list-item>⚡ <strong>Ultra-low latency</strong> - Under 500ms delay</s-list-item>
+              <s-list-item>🔒 <strong>Peer-to-peer</strong> - Direct connection, no middleman</s-list-item>
+              <s-list-item>🎥 <strong>Works with any camera</strong> - Just grant browser access</s-list-item>
+              <s-list-item>📱 <strong>Mobile friendly</strong> - Works on all devices</s-list-item>
+            </s-list>
+          </div>
+        </s-card>
       </s-page>
     </div>
   );
