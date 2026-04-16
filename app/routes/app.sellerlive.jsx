@@ -76,24 +76,21 @@ export default function SellerLiveStream() {
     setStreamId(e.target.value);
   };
 
-  // Copy OBS Broadcast Link
-  const copyBroadcastLink = () => {
-  if (!streamId.trim()) {
-    shopify.toast.show("Please enter a Stream ID first", { isError: true });
-    return;
-  }
-  
-  // IMPORTANT: Add ?room parameter to auto-join without menu
-  const broadcastLink = `https://vdo.ninja/?push=${streamId}&webcam&quality=1080p&bitrate=3000`;
-  navigator.clipboard.writeText(broadcastLink);
-  
-  setShowCopiedFeedback(true);
-  shopify.toast.show("Broadcast link copied! Use in OBS as Browser Source");
-  
-  setTimeout(() => setShowCopiedFeedback(false), 3000);
-};
+  // Button 1: Start Live Stream - Opens VDO.Ninja push URL
+  const startLiveStream = () => {
+    if (!streamId.trim()) {
+      shopify.toast.show("Please enter a Stream ID first", { isError: true });
+      return;
+    }
+    
+    // Open VDO.Ninja push URL to start streaming
+    const pushUrl = `https://vdo.ninja/?push=${streamId}&webcam`;
+    window.open(pushUrl, "_blank");
+    
+    shopify.toast.show("VDO.Ninja stream window opened! Start broadcasting your camera.");
+  };
 
-  // Copy Viewer Link
+  // Button 2: Copy Viewer Link - Creates viewer link with selected products
   const copyViewerLink = () => {
     if (!streamId.trim()) {
       shopify.toast.show("Please enter a Stream ID first", { isError: true });
@@ -114,70 +111,7 @@ export default function SellerLiveStream() {
     shopify.toast.show("Viewer link copied to clipboard!");
   };
 
-  // Open Stream in New Tab (for testing)
-  const openViewerTab = async () => {
-    if (!streamId.trim()) {
-      shopify.toast.show("Please enter a Stream ID", { isError: true });
-      return;
-    }
-
-    if (selectedProductIds.length === 0) {
-      shopify.toast.show("Please select at least one product", {
-        isError: true,
-      });
-      return;
-    }
-
-    setIsStarting(true);
-
-    const idsParam = selectedProductIds.join(",");
-
-    try {
-      // STEP 1: Save live session in DB
-      const response = await fetch("/api/live-sessions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          shop,
-          streamId: streamId.trim(),
-          productIds: selectedProductIds,
-        }),
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        console.error("Failed to create live session:", text);
-        shopify.toast.show(
-          "Could not record live session (stream will still open).",
-          { isError: true },
-        );
-      } else {
-        shopify.toast.show(`Live stream "${streamId}" session saved.`);
-      }
-    } catch (err) {
-      console.error("Error calling /api/live-sessions:", err);
-      shopify.toast.show(
-        "Error recording live session (stream will still open).",
-        { isError: true },
-      );
-    } finally {
-      setIsStarting(false);
-    }
-
-    // STEP 2: Open viewer URL in new tab
-    const url = `/viewerstream?shop=${encodeURIComponent(
-      shop,
-    )}&streamId=${encodeURIComponent(streamId)}&ids=${encodeURIComponent(
-      idsParam,
-    )}`;
-
-    console.log("Opening URL:", url);
-    window.open(url, "_blank");
-  };
-
-  // Clear all rows from LiveSession table
+  // Button 3: Clear all live sessions (maintenance)
   const clearLiveSessions = async () => {
     if (
       !window.confirm(
@@ -195,7 +129,7 @@ export default function SellerLiveStream() {
       });
 
       if (!response.ok) {
-        const text = await text.text();
+        const text = await response.text();
         console.error("Failed to clear live sessions:", text);
         shopify.toast.show("Failed to clear live sessions", {
           isError: true,
@@ -264,83 +198,6 @@ export default function SellerLiveStream() {
                 This ID will create your VDO.Ninja room (e.g., vdo.ninja/your-id)
               </div>
             </div>
-
-            {/* VDO.Ninja Instructions Card */}
-            {streamId && (
-              <div style={{ 
-                marginTop: "16px", 
-                marginBottom: "24px",
-                padding: "16px", 
-                background: "#f0f7ff", 
-                borderRadius: "8px",
-                border: "1px solid #b3d4fc"
-              }}>
-                <s-text variant="headingSm" style={{ marginBottom: "12px", display: "block" }}>
-                  🎥 VDO.Ninja Stream Setup
-                </s-text>
-                
-                {/* OBS Setup Section */}
-                <div style={{ marginBottom: "16px" }}>
-                  <s-text variant="bodySm" tone="subdued" style={{ marginBottom: "8px", display: "block" }}>
-                    <strong>Step 1:</strong> Copy this link to use in OBS Studio:
-                  </s-text>
-                  <div style={{ 
-                    display: "flex", 
-                    gap: "8px", 
-                    alignItems: "center",
-                    marginBottom: "8px"
-                  }}>
-                    <code style={{
-                      flex: 1,
-                      padding: "8px",
-                      background: "#fff",
-                      border: "1px solid #ddd",
-                      borderRadius: "4px",
-                      fontSize: "12px",
-                      overflow: "auto",
-                      wordBreak: "break-all"
-                    }}>
-                      https://vdo.ninja/?push={{streamId}}&webcam&quality=1080p&bitrate=3000
-                    </code>
-                    <s-button onClick={copyBroadcastLink} variant="tertiary">
-                      {showCopiedFeedback ? "✓ Copied!" : "Copy Link"}
-                    </s-button>
-                  </div>
-                </div>
-
-                {/* OBS Instructions */}
-                <div style={{ marginBottom: "16px", padding: "12px", background: "#fff", borderRadius: "4px" }}>
-                  <s-text variant="bodySm" tone="subdued">
-                    <strong>Step 2:</strong> Add to OBS Studio as Browser Source:
-                  </s-text>
-                  <ol style={{ marginTop: "8px", fontSize: "12px", color: "#666", paddingLeft: "20px" }}>
-                    <li>Open OBS Studio</li>
-                    <li>Click <strong>+</strong> under Sources → <strong>Browser</strong></li>
-                    <li>Name it (e.g., "VDO.Ninja Stream")</li>
-                    <li>Paste the URL above: <code>https://vdo.ninja/{streamId}</code></li>
-                    <li>Set Width: <strong>1280px</strong>, Height: <strong>720px</strong></li>
-                    <li>Check <strong>"Control audio via OBS"</strong></li>
-                    <li>Click OK</li>
-                    <li>The browser source will automatically connect when you go live</li>
-                  </ol>
-                </div>
-
-                {/* Viewer Link Section */}
-                <div style={{ marginBottom: "8px" }}>
-                  <s-text variant="bodySm" tone="subdued" style={{ marginBottom: "8px", display: "block" }}>
-                    <strong>Step 3:</strong> Share this link with your customers:
-                  </s-text>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <s-button onClick={copyViewerLink} variant="primary">
-                      Copy Viewer Link
-                    </s-button>
-                    <s-button onClick={openViewerTab} variant="secondary">
-                      Preview Stream
-                    </s-button>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Product selection */}
             <div style={{ marginTop: "24px" }}>
@@ -438,31 +295,63 @@ export default function SellerLiveStream() {
             </div>
           </div>
 
-          {/* Action buttons */}
+          {/* Three Action Buttons */}
           <s-divider />
           <div
             style={{
               display: "flex",
               gap: "12px",
               marginTop: "24px",
-              justifyContent: "flex-end",
+              justifyContent: "flex-start",
             }}
           >
+            {/* Button 1: Start Live Stream */}
             <s-button
-              onClick={openViewerTab}
+              onClick={startLiveStream}
               variant="primary"
-              disabled={!streamId || selectedProductIds.length === 0}
-              loading={isStarting}
+              disabled={!streamId.trim()}
             >
-              Start Live Stream
+              🎥 Start Live Stream
             </s-button>
+
+            {/* Button 2: Copy Viewer Link */}
+            <s-button
+              onClick={copyViewerLink}
+              variant="secondary"
+              disabled={!streamId.trim() || selectedProductIds.length === 0}
+            >
+              🔗 Copy Viewer Link
+            </s-button>
+
+            {/* Button 3: Clear All Streams */}
+            <s-button
+              variant="tertiary"
+              tone="critical"
+              onClick={clearLiveSessions}
+              loading={isClearing}
+            >
+              🗑️ Clear All Streams
+            </s-button>
+          </div>
+          
+          {/* Helper text for buttons */}
+          <div style={{ marginTop: "16px", fontSize: "12px", color: "#6b6b6b" }}>
+            <p style={{ margin: "4px 0" }}>
+              <strong>🎥 Start Live Stream:</strong> Opens VDO.Ninja push page to begin broadcasting
+            </p>
+            <p style={{ margin: "4px 0" }}>
+              <strong>🔗 Copy Viewer Link:</strong> Share this link with customers to watch and shop
+            </p>
+            <p style={{ margin: "4px 0" }}>
+              <strong>🗑️ Clear All Streams:</strong> Remove all live session records from database
+            </p>
           </div>
         </s-card>
 
-        {/* Instructions */}
+        {/* Quick Guide */}
         <s-card>
           <s-text variant="headingMd" as="h2">
-            How It Works
+            Quick Start Guide
           </s-text>
           <s-divider />
           <div style={{ marginTop: "12px" }}>
@@ -474,13 +363,13 @@ export default function SellerLiveStream() {
                 <strong>2. Select Products</strong> - Choose which products to feature
               </s-list-item>
               <s-list-item>
-                <strong>3. Copy Broadcast Link</strong> - Use in OBS as Browser Source
+                <strong>3. Click "Start Live Stream"</strong> - Opens VDO.Ninja push page
               </s-list-item>
               <s-list-item>
-                <strong>4. Start Streaming in OBS</strong> - Your stream goes live instantly
+                <strong>4. Grant camera access</strong> - Allow VDO.Ninja to use your camera
               </s-list-item>
               <s-list-item>
-                <strong>5. Share Viewer Link</strong> - Customers can watch and shop
+                <strong>5. Click "Copy Viewer Link"</strong> - Share with your customers
               </s-list-item>
             </s-list>
           </div>
@@ -497,38 +386,9 @@ export default function SellerLiveStream() {
               <s-list-item>✅ <strong>100% Free</strong> - No subscription or API keys needed</s-list-item>
               <s-list-item>⚡ <strong>Ultra-low latency</strong> - Under 500ms delay</s-list-item>
               <s-list-item>🔒 <strong>Peer-to-peer</strong> - Direct connection, no middleman</s-list-item>
-              <s-list-item>🎥 <strong>Works with OBS</strong> - Simple browser source setup</s-list-item>
+              <s-list-item>🎥 <strong>Works with any camera</strong> - Just grant browser access</s-list-item>
               <s-list-item>📱 <strong>Mobile friendly</strong> - Works on all devices</s-list-item>
             </s-list>
-          </div>
-        </s-card>
-
-        {/* Maintenance */}
-        <s-card>
-          <s-text variant="headingMd" as="h2">
-            Maintenance
-          </s-text>
-          <s-divider />
-          <div style={{ marginTop: "12px" }}>
-            <s-text variant="bodySm" tone="subdued">
-              Use this to clear all live session records from the database.
-            </s-text>
-          </div>
-          <div
-            style={{
-              marginTop: "16px",
-              display: "flex",
-              justifyContent: "flex-end",
-            }}
-          >
-            <s-button
-              variant="tertiary"
-              tone="critical"
-              onClick={clearLiveSessions}
-              loading={isClearing}
-            >
-              Clear all live sessions
-            </s-button>
           </div>
         </s-card>
       </s-page>
